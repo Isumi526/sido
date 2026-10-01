@@ -117,7 +117,9 @@
             <td class="num">{{ yen(inv.grand_total) }}</td>
             <td @click.stop>
               <a v-if="inv.pdf_path" href="#" @click.prevent="openDoc(inv.pdf_path, inv.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
-              <span v-else class="muted">—</span>
+              <span v-if="invoiceFiles(inv).length > 1" class="file-count" :data-testid="`invoice-file-count-${inv.id}`"
+                    title="請求を開くと全部見られます">{{ invoiceFiles(inv).length }}枚</span>
+              <span v-if="!invoiceFiles(inv).length" class="muted">—</span>
             </td>
             <td class="status-cell" @click.stop>
               <div class="status-wrap">
@@ -175,9 +177,11 @@
           <button class="modal-close" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
-          <p v-if="form.pdf_path" class="existing-pdf-link">
-            <a href="#" @click.prevent="openDoc(form.pdf_path, form.pdf_bucket)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> アップロード済みのPDFを見る</a>
-          </p>
+          <div v-if="formFiles.length" class="existing-pdf-link" data-testid="invoice-files">
+            <span class="existing-files-label">アップロード済み（{{ formFiles.length }}枚）</span>
+            <a v-for="(d, i) in formFiles" :key="d.path" href="#" :data-testid="`invoice-file-${i}`"
+               @click.prevent="openDoc(d.path, d.bucket)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> {{ i + 1 }}枚目{{ d.uploadedAt ? `（${d.uploadedAt}）` : '' }}</a>
+          </div>
           <!-- PDF→AI解析（ドラッグ&ドロップ対応） -->
           <div class="ai-row" :class="{ 'drag-active': dragActive }"
                @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
@@ -190,7 +194,12 @@
           </div>
           <!-- ドラッグ&ドロップで選択した場合、ネイティブのinputの表示("選択されていません"等)は
                更新されないため、選択中ファイル名をここに明示する（D&D後にUIが変わらず分かりづらい対策）。 -->
-          <p v-if="files.length" class="selected-files">選択中: {{ files.map(f => f.name).join('、') }}</p>
+          <div v-if="files.length" class="selected-files" data-testid="selected-files">
+            <span>{{ form.id && formFiles.length ? '保存すると追加されます' : '選択中' }}:</span>
+            <span v-for="(f, i) in files" :key="`${f.name}-${f.size}-${i}`" class="selected-file">
+              {{ f.name }}<button type="button" class="selected-file-remove" :aria-label="`${f.name}を外す`" @click="removeFile(i)">×</button>
+            </span>
+          </div>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
           <!-- 請求元区分（協力業者 / その他仕入先）。その他は仕入先名を自由入力できる＝登録口の間口を広げる -->
@@ -478,6 +487,38 @@ const IS_DEV   = import.meta.env.DEV
 //  既存194件は pdf_bucket 既定値の 'expense-receipts' のまま＝resolveDocUrl が公開URLで開く（後方互換）。
 const UPLOAD_BUCKET = 'admin-docs'
 
+// ── 1件の請求に付いたファイル（2026-10-01 尾崎さん「複数枚アップロードしても最後の1枚しか見られない」）──
+//  先頭は従来どおり pdf_path（旧公開バケットの分もある）。2枚目以降は admin-docs の
+//  {account}/subcontractor-invoices/{invoiceId}-*.ext に置き、フォルダの一覧から拾う（DB変更なし）。
+//  ★付け直しても上書きしない（以前は {invoiceId}.pdf に upsert していて前のファイルが消えた）。
+interface InvoiceDoc { path: string; bucket: string | null; uploadedAt: string | null }
+const extraFilesById = ref<Record<string, InvoiceDoc[]>>({})
+const INVOICE_UUID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-.+/i
+async function loadExtraFiles(accountId: string) {
+  const prefix = `${accountId}/subcontractor-invoices`
+  const map: Record<string, InvoiceDoc[]> = {}
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.storage.from(UPLOAD_BUCKET)
+      .list(prefix, { limit: 1000, offset, sortBy: { column: 'created_at', order: 'asc' } })
+    if (error || !data?.length) break
+    for (const o of data) {
+      const m = o.name.match(INVOICE_UUID)
+      if (!m) continue
+      const at = (o as any).created_at ? String((o as any).created_at).slice(0, 10) : null
+      ;(map[m[1].toLowerCase()] ??= []).push({ path: `${prefix}/${o.name}`, bucket: UPLOAD_BUCKET, uploadedAt: at })
+    }
+    if (data.length < 1000) break
+  }
+  extraFilesById.value = map
+}
+function invoiceFiles(inv: { id?: string; pdf_path?: string | null; pdf_bucket?: string | null } | null | undefined): InvoiceDoc[] {
+  if (!inv) return []
+  const out: InvoiceDoc[] = []
+  if (inv.pdf_path) out.push({ path: inv.pdf_path, bucket: inv.pdf_bucket ?? null, uploadedAt: null })
+  if (inv.id) out.push(...(extraFilesById.value[inv.id.toLowerCase()] ?? []).filter(d => d.path !== inv.pdf_path))
+  return out
+}
+
 interface Item {
   id?: string; item_date: string | null; site_id: string | null; site_name?: string | null
   description: string | null; quantity: number | null; unit: string | null
@@ -596,6 +637,8 @@ const poOverResidual = computed(() => {
 watch(poOverResidual, (over) => { if (!over && formError.value.includes('残額')) formError.value = '' })
 const form     = ref<Form | null>(null)
 const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
+/** 開いている請求に既に付いているファイル（モーダルの一覧） */
+const formFiles = computed(() => invoiceFiles(form.value as any))
 const dragActive = ref(false)      // ファイルD&D中のハイライト
 const analyzing = ref(false)
 const aiMsg    = ref('')
@@ -656,7 +699,7 @@ const paidList    = computed(() => invoices.value.filter(v => v.paid && matchesF
 const visibleList = computed(() => (tab.value === 'paid' ? paidList.value : unpaidList.value))
 
 /** まとめてDLの対象＝絞り込み結果のうち PDF があるもの（未払い/支払い済みの両タブを跨いで対象にする） */
-const bulkTargets = computed(() => invoices.value.filter(v => matchesFilter(v) && v.pdf_path))
+const bulkTargets = computed(() => invoices.value.filter(v => matchesFilter(v) && invoiceFiles(v).length))
 
 async function bulkDownload() {
   if (bulkBusy.value) return
@@ -676,19 +719,23 @@ async function bulkDownload() {
     const used = new Set<string>()
     let failed = 0
     for (const v of targets) {
-      try {
-        const url = await resolveDocUrl(v.pdf_path, v.pdf_bucket)
-        if (!url) { failed++; continue }
-        const resp = await fetch(url)
-        if (!resp.ok) { failed++; continue }
-        // ファイル名は「日付_業者名_件名」。重複したら連番を付ける（zip内で上書きされないように）
-        const base = [v.invoice_date ?? '日付なし', v.vendor_name ?? '業者なし', v.title ?? '']
-          .filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '_')
-        let name = `${base}.pdf`
-        for (let i = 2; used.has(name); i++) name = `${base}_${i}.pdf`
-        used.add(name)
-        zip.file(name, await resp.blob())
-      } catch { failed++ }   // 1件失敗しても残りは落とす
+      // 1件の請求に付いたファイルは全部入れる（2枚目以降も）
+      for (const d of invoiceFiles(v)) {
+        try {
+          const url = await resolveDocUrl(d.path, d.bucket)
+          if (!url) { failed++; continue }
+          const resp = await fetch(url)
+          if (!resp.ok) { failed++; continue }
+          // ファイル名は「日付_業者名_件名」。重複したら連番を付ける（zip内で上書きされないように）
+          const base = [v.invoice_date ?? '日付なし', v.vendor_name ?? '業者なし', v.title ?? '']
+            .filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '_')
+          const ext = (d.path.split('.').pop() || 'pdf').toLowerCase()
+          let name = `${base}.${ext}`
+          for (let i = 2; used.has(name); i++) name = `${base}_${i}.${ext}`
+          used.add(name)
+          zip.file(name, await resp.blob())
+        } catch { failed++ }   // 1件失敗しても残りは落とす
+      }
     }
     const siteLabel = filterSiteId.value ? (siteNameById.value[filterSiteId.value] ?? '現場') : '全現場'
     const vendorLabel = filterVendor.value || '全業者'
@@ -698,9 +745,10 @@ async function bulkDownload() {
     a.download = `請求書_${siteLabel}_${vendorLabel}.zip`.replace(/[\\/:*?"<>|]/g, '_')
     a.click()
     URL.revokeObjectURL(a.href)
+    const fileTotal = targets.reduce((n, v) => n + invoiceFiles(v).length, 0)
     bulkMsg.value = failed
-      ? `${targets.length - failed}件をダウンロードしました（${failed}件は取得できませんでした）`
-      : `${targets.length}件をダウンロードしました`
+      ? `${fileTotal - failed}ファイルをダウンロードしました（${failed}ファイルは取得できませんでした）`
+      : `${targets.length}件（${fileTotal}ファイル）をダウンロードしました`
   } finally { bulkBusy.value = false }
 }
 const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
@@ -865,6 +913,7 @@ async function load() {
   const { data: tp } = await supabase.from('subcontractor_invoice_templates').select('*')
     .eq('account_id', accountId).order('created_at')
   templates.value = tp ?? []
+  await loadExtraFiles(accountId).catch(e => console.error('[invoices] 添付ファイルの一覧に失敗:', e))
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
     // ★一覧の「請求金額(税込)」もモーダルと同じ規則を通す。内税の請求書に税を足すと
@@ -1007,9 +1056,22 @@ async function addSite(it: Item) {
   }
 }
 
-function onFile(e: Event) { files.value = Array.from((e.target as HTMLInputElement).files ?? []); aiMsg.value = '' }
+// ★選び直し・ドラッグのたびに「追加」する（2026-10-01 尾崎さん。以前は置き換えで、1枚ずつ足すと最後の1枚しか残らなかった）。
+//  同じファイル（名前・大きさ・更新日時が同じ）は二重に足さない。外す時は一覧の × で。
+function addFiles(list: File[]) {
+  const key = (f: File) => `${f.name}|${f.size}|${f.lastModified}`
+  const have = new Set(files.value.map(key))
+  files.value = [...files.value, ...list.filter(f => !have.has(key(f)))]
+  aiMsg.value = ''
+}
+function removeFile(i: number) { files.value = files.value.filter((_, n) => n !== i) }
+function onFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  addFiles(Array.from(input.files ?? []))
+  input.value = ''   // 同じファイルを外した後に選び直せるように
+}
 
-// ドラッグ&ドロップでファイルをセット（PDF/画像のみ・複数可）。input選択と同じく置き換え。
+// ドラッグ&ドロップでファイルを追加（PDF/画像のみ・複数可）。
 // ★File.type はドラッグ元(OS/ファイラー)によっては空文字になることがあり、type判定だけだと
 //   何もエラーを出さずファイルが無視される（「ドラッグしてもアップされない」の一因）。
 //   type が空/不明な場合は拡張子でもフォールバック判定する。
@@ -1021,7 +1083,7 @@ function onDrop(e: DragEvent) {
     return /\.(pdf|png|jpe?g|heic|gif|webp)$/i.test(f.name)
   }
   const dropped = Array.from(e.dataTransfer?.files ?? []).filter(isAcceptable)
-  if (dropped.length) { files.value = dropped; aiMsg.value = '' }
+  if (dropped.length) addFiles(dropped)
   else if (e.dataTransfer?.files.length) {
     aiMsg.value = 'PDFまたは画像ファイルをドロップしてください'
   }
@@ -1308,8 +1370,9 @@ async function save() {
       logFeatureUsage('subcontractor_invoice_registered')   // 効果測定（ベストエフォート）
     }
     // PDF/画像アップロード（任意・複数枚対応）
-    // 先頭ファイルは従来どおり {invoiceId}.pdf として pdf_path に保存（既存ビューア互換）。
-    // 2枚目以降は {invoiceId}-{n}.{ext} として保存し、原本を失わないようにする。
+    // 請求にまだファイルが無ければ、先頭は従来どおり {invoiceId}.pdf として pdf_path に保存（既存ビューア互換）。
+    // それ以外（2枚目以降・付け足し）は {invoiceId}-{時刻}-{n}.{ext} の別名で追加し、既存のファイルは上書きしない
+    // （2026-10-01 尾崎さん。以前は付け直すと {invoiceId}.pdf が上書きされ、前の請求書が消えていた）。
     // ★アップロード失敗を握りつぶさない（従来は.catch(()=>{})で失敗してもpdf_pathを更新していた＝
     //   「ドラッグしてもアップされない」の実体。失敗時はエラーを表示しpdf_path更新もスキップする。
     if (files.value.length) {
@@ -1317,25 +1380,31 @@ async function save() {
       // ★admin-docs のRLSは path 先頭=account_id を要求する（purchase-orders/estimates と同じ規約）。
       //  ここを間違えるとアップロードが弾かれ、pdf_path が更新されないまま
       //  「保存はできたのにPDFが付かない」になる（実際に踏んだ）。
-      const primaryPath = `${accountId}/subcontractor-invoices/${invoiceId}.pdf`
-      const { error: primaryUpErr } = await supabase.storage.from(UPLOAD_BUCKET)
-        .upload(primaryPath, files.value[0], { upsert: true, contentType: files.value[0].type || 'application/pdf' })
+      const dir = `${accountId}/subcontractor-invoices`
       const uploadErrors: string[] = []
-      if (primaryUpErr) uploadErrors.push(primaryUpErr.message)
-      for (let n = 1; n < files.value.length; n++) {
-        const extraPath = `${accountId}/subcontractor-invoices/${invoiceId}-${n + 1}.${ext(files.value[n])}`
+      let rest = files.value
+      if (!f.pdf_path) {
+        const primaryPath = `${dir}/${invoiceId}.pdf`
+        const { error: primaryUpErr } = await supabase.storage.from(UPLOAD_BUCKET)
+          .upload(primaryPath, rest[0], { upsert: true, contentType: rest[0].type || 'application/pdf' })
+        if (primaryUpErr) uploadErrors.push(primaryUpErr.message)
+        else {
+          // ★pdf_bucket も必ず一緒に更新する。パスだけ更新すると、読む側が既定の
+          //  公開バケットを見にいって「アップロードしたのに開けない」になる。
+          await supabase.from('subcontractor_invoices')
+            .update({ pdf_path: primaryPath, pdf_bucket: UPLOAD_BUCKET }).eq('id', invoiceId)
+        }
+        rest = rest.slice(1)
+      }
+      const stamp = Date.now()
+      for (let n = 0; n < rest.length; n++) {
+        const extraPath = `${dir}/${invoiceId}-${stamp}-${n + 1}.${ext(rest[n])}`
         const { error: extraUpErr } = await supabase.storage.from(UPLOAD_BUCKET)
-          .upload(extraPath, files.value[n], { upsert: true, contentType: files.value[n].type || 'application/pdf' })
+          .upload(extraPath, rest[n], { upsert: false, contentType: rest[n].type || 'application/pdf' })
         if (extraUpErr) uploadErrors.push(extraUpErr.message)
       }
       if (uploadErrors.length) {
         formError.value = `請求データは保存しましたが、ファイルのアップロードに失敗しました: ${uploadErrors[0]}`
-      }
-      if (!primaryUpErr) {
-        // ★pdf_bucket も必ず一緒に更新する。パスだけ更新すると、読む側が既定の
-        //  公開バケットを見にいって「アップロードしたのに開けない」になる。
-        await supabase.from('subcontractor_invoices')
-          .update({ pdf_path: primaryPath, pdf_bucket: UPLOAD_BUCKET }).eq('id', invoiceId)
       }
     }
     // 明細insert
@@ -1581,6 +1650,14 @@ onMounted(load)
 .data-row:hover { background: #f7f7f7; }
 .chevron { color: #bbb; text-align: right; }
 .muted { color: #999; } .center { text-align: center; }
+/* 1件の請求に付いたファイル（2026-10-01） */
+.file-count { margin-left: 6px; font-size: 0.8em; color: #475569; background: #e2e8f0; border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
+.existing-pdf-link { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 12px; }
+.existing-files-label { font-size: 0.85em; color: #64748b; }
+.selected-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; font-size: 0.85em; color: #475569; }
+.selected-file { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2px 4px 2px 10px; }
+.selected-file-remove { border: none; background: none; color: #94a3b8; cursor: pointer; font-size: 1.1em; line-height: 1; padding: 0 4px; }
+.selected-file-remove:hover { color: #ef4444; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
 .modal { background: #fff; border-radius: 12px; max-width: 980px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; }
