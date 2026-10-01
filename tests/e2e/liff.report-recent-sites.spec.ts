@@ -42,6 +42,8 @@ test.describe('現場プルダウンの「最近の現場」', () => {
     const users = await rest('users?line_user_id=eq.dev-user-id&select=id,worker_id')
     userId = users[0].id
     workerId = users[0].worker_id
+    // 入力フォームが出る前提（今日が未送信）にする。他specの残りで今日が送信済みだと「送信済みです」になり、プルダウン自体が出ない
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${ymd(0)}`, { method: 'DELETE' }).catch(() => {})
     for (const n of Object.values(NAMES)) {
       siteIds.push((await restSrv('sites', {
         method: 'POST', headers: { Prefer: 'return=representation' },
