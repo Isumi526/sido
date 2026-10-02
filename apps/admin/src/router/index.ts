@@ -63,6 +63,8 @@ export const router = createRouter({
     { path: '/work-categories', component: () => import('../pages/work-categories.vue'), meta: { management: true } },
     // 読み仮名の未入力（英語表示のローマ字の元・2026-10-02 II-3）
     { path: '/name-readings', component: () => import('../pages/name-readings.vue'), meta: { management: true } },
+    // 住所の無い現場（距離の候補の元・2026-10-02 I-4）
+    { path: '/site-addresses', component: () => import('../pages/site-addresses.vue'), meta: { management: true } },
     // 物品マスタ（ETCカード等）。会社全体の設定＝経営系（EF 側でも同じ判定をしている）
     { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     // 在庫管理（品目＋入出庫・会社単位MVP）

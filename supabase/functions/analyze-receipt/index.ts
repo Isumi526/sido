@@ -63,6 +63,8 @@ Deno.serve(async (req) => {
     ★13桁の数字だけが書かれていて T が無い場合も、登録番号の欄にあるなら T を付けて返す。
     ★見当たらない時だけ null",
   "liters": 給油量（ガソリン/軽油の領収書の場合のみ数値でリットル数。給油以外の領収書、または記載が無い/読み取れない場合はnull）,
+  "issuedDate": "領収書の発行日（YYYY-MM-DD）。和暦・『R7.10.2』『2026/10/2』なども西暦に直す。年が無い時は null。読めない時は null",
+  "kind": "種類。次のどれか1つ: parking（駐車場）/ highway（高速道路・ETC）/ train（鉄道・バス・タクシー）/ hotel（宿泊）/ gasoline（給油）/ other（それ以外）",
   "account": "勘定科目。次の7つのいずれか厳密に1つだけを返す: 旅費交通費 / 車両費 / 消耗品費 / 材料費 / 接待交際費 / 会議費 / 雑費。判断できない場合は必ずnull（勝手に別の名称を作らない）。目安: 飲食店・居酒屋・料亭=接待交際費、カフェ・喫茶・貸会議室=会議費、ホームセンター・工具・建築資材=材料費、文具・日用品=消耗品費、鉄道・バス・タクシー・駐車・高速・宿泊=旅費交通費、給油・洗車・車検=車両費"
 }`
 
@@ -114,6 +116,8 @@ Deno.serve(async (req) => {
       invoiceNumber: string | null
       liters: number | null
       account: string | null
+      issuedDate?: string | null
+      kind?: string | null
     }
 
     // 勘定科目は7つの固定値以外を通さない（表記揺れが入ると科目でフィルタ/集計できなくなる）。
@@ -150,6 +154,9 @@ Deno.serve(async (req) => {
       invoiceNumber,
       liters:        result.liters != null ? Number(result.liters) : null,
       account,
+      // 発行日（2026-10-02 R-3: 日報の日と違う領収書に気づけるように）・種類（まとめて入れた時の振り分けの初期値）
+      issuedDate: typeof result.issuedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(result.issuedDate) ? result.issuedDate : null,
+      kind: ['parking', 'highway', 'train', 'hotel', 'gasoline', 'other'].includes(String(result.kind)) ? String(result.kind) : null,
     })
   } catch (e) {
     console.error('[analyze-receipt]', e)

@@ -22,7 +22,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report tests/e2e/.report",
     "check:admin-pages": "node scripts/check-admin-pages.mjs",
-    "check:no-emoji": "node scripts/check-no-emoji.mjs"
+    "check:no-emoji": "node scripts/check-no-emoji.mjs",
+    "check:xlsx": "cd apps/admin && node --experimental-transform-types scripts/xlsx-roundtrip.test.mts",
+    "test:e2e:changed": "node scripts/select-e2e.mjs --run"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

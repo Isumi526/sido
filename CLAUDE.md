@@ -92,7 +92,7 @@ git push origin main --force
 | **APP_LAYOUT** | npm workspaces モノレポ | `apps/admin`(Vite/Vue・`vite --port 3001`) / `apps/liff`(Nuxt) ※`apps/gas` は 2026-09-03 に撤去 |
 | **TYPECHECK** | `npm run typecheck`（=`--workspaces --if-present`） | |
 | **BUILD** | `npm run build --workspaces --if-present` | admin=`vite build` / liff=`nuxt build` |
-| **TEST** | `npm run test:e2e`（Playwright） | |
+| **TEST** | 実装中（/run の着地ゲート）＝`npm run test:e2e:changed`（変更に関係する spec＋基本セット6本・約2分）／本番に出す前（/ship）＝`npm run test:e2e`（全体・約50分） | 選び方は `scripts/select-e2e.mjs`（画面→そのパスを開く spec、部品・文言・Edge Function→使う画面の spec）。**対応の分からない変更（migration・shared/・設定・_shared 等）を1つでも含むと全体を流す**（安全側）。基本セット＝ログイン・打刻・日報の送信・承認（スクリプト内の BASE_SET）（2026-10-02 E2E整理2） |
 | **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root）。**`review-drive-admin` / `review-drive-liff` は含めない**——/review が対象チケットの分だけ指名して走らせる駆動用で、合否 assert を持たずローカルDBを書き換えるため着地ゲートに混ぜない（2026-08-06） |
 | **LOCAL_STACK** | supabase（**56321番台に固定**＝API 56321 / DB 56322 / Studio 56323。他プロジェクトと同一マシンで共存のため標準54321番台ではない） | `supabase start`。**`.env` に `LOCAL_DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres` が必須**（未設定だと `scripts/rls-audit.mjs` 等が既定54322＝別プロジェクトのDBを誤って監査してしまう。2026-07-11発見・`.env`はgitignore対象のため新規cloneや別マシンでは都度設定要） |
 | **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |

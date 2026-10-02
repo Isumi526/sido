@@ -437,8 +437,8 @@ async function send() {
     draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; replyTarget.value = null
     nextTick(autoResizeDraft)
     await loadMessages()
-    // 開いていない購読者（招待リンクのゲスト等）へ新着を知らせる。best-effort。
-    push.notifyNewMessage({ siteId, senderName: myName.value, body })
+    // この現場のメンバー（作業員の通知）と招待リンクのゲストへ新着を知らせる。best-effort。
+    push.notifyNewMessage({ siteId, senderName: myName.value, body, mentionedWorkerIds: mentionIds })
   }
 }
 

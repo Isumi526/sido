@@ -159,5 +159,10 @@ export function useWorkerPush() {
     } catch { return { overtime: 0, report: 0, punch: 0, distance: 0, expense: 0, inventory: 0 } }
   }
 
-  return { state, enable, disable, setPref, approvalPending, approvalBreakdown, isSupported }
+  /** 日報のフォームの既定（従来／ステップ式・R-3）。best-effort */
+  async function setReportFormPref(mode: 'classic' | 'steps'): Promise<void> {
+    await call('report-form-set', { mode })
+  }
+
+  return { state, enable, disable, setPref, approvalPending, approvalBreakdown, isSupported, setReportFormPref }
 }
