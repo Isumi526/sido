@@ -107,6 +107,21 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
     ]
   },
   {
+    "path": "/site-addresses",
+    "name": "住所の無い現場",
+    "title": "住所の無い現場",
+    "requiresManagement": true,
+    "requiresEstimate": false,
+    "requiresApprover": false,
+    "feature": null,
+    "help": [
+      "住所がまだ入っていない現場の一覧です（失注の現場は出しません）。",
+      "「候補を探す」を押すと、現場名から住所の候補が出ます。合っている候補を押すと住所が入り、保存されます。",
+      "候補に無い時は、住所を手で入れて「保存」を押してください。",
+      "住所と位置は、日報の距離の候補に使います（候補から選んだ住所だけ位置が入ります）。"
+    ]
+  },
+  {
     "path": "/assets",
     "name": "備品・カード",
     "title": "備品・カード（ETC など）",

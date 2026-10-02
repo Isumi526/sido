@@ -33,6 +33,7 @@ const SCREEN_NAMES: Record<string, string> = {
   '/sites': '現場',
   '/work-categories': '作業区分',
   '/name-readings': '読み仮名の未入力',
+  '/site-addresses': '住所の無い現場',
   '/contractors': '元請け業者',
   '/subcontractors': '協力業者',
   '/vehicles': '車両',
