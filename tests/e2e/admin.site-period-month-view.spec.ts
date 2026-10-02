@@ -59,6 +59,7 @@ test('★新規現場は 住所・工期（開始）が無いと保存できず�
   const firstVal = await resp.locator('option').nth(1).getAttribute('value')
   if (firstVal) await resp.selectOption(firstVal)
 
+  await modal.getByTestId('site-name-kana').fill('いーつーいーこうき')   // 新規の受注以降は読み仮名も必須（2026-10-02 II-3）
   await modal.getByTestId('site-location').fill('愛知県名古屋市中区栄3-1')
   await modal.getByTestId('site-period-start').fill(ymd(0))
   await modal.getByTestId('site-period-undecided').check()   // 終了日は未定

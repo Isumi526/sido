@@ -210,14 +210,14 @@ Deno.serve(async (req) => {
   //   読みも書きもここを通す（テーブル直叩きは通らない）。
   if (body.action === 'categories') {
     const { data, error } = await svc.from('work_categories')
-      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
+      .select('id, name, name_kana, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
       .eq('account_id', accountId).order('sort_order').order('name')
     if (error) { console.error('[master-data] categories failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     return json({ ok: true, categories: data ?? [] })
   }
 
   if (body.action === 'category-save' || body.action === 'category-delete' || body.action === 'category-move'
-    || body.action === 'category-hours-save' || body.action === 'category-hours-delete') {
+    || body.action === 'category-hours-save' || body.action === 'category-hours-delete' || body.action === 'category-kana-save') {
     // ★権限はサーバで確認する。画面でボタンを隠すだけでは REST/EF 直叩きで通る
     const { data: w } = await svc.from('workers').select('permission_role')
       .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
@@ -226,6 +226,19 @@ Deno.serve(async (req) => {
     const role = (w?.permission_role as string) ?? null
     if (role !== null && !WORK_CATEGORY_MANAGE_ROLES.includes(role)) {
       return json({ ok: false, error: 'CATEGORY_FORBIDDEN' }, 403)
+    }
+
+    // 読み仮名だけを入れる（管理画面「読み仮名の未入力」・2026-10-02 II-3）。他の列は触らない
+    if (body.action === 'category-kana-save') {
+      const id = typeof body.id === 'string' ? body.id : ''
+      const kana = typeof body.nameKana === 'string' ? body.nameKana.trim().slice(0, 100) : ''
+      if (!id) return json({ ok: false, error: 'id_required' }, 400)
+      const { data: updated, error } = await svc.from('work_categories')
+        .update({ name_kana: kana || null, updated_at: new Date().toISOString() })
+        .eq('id', id).eq('account_id', accountId).select('id')
+      if (error) { console.error('[master-data] category-kana-save failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+      if (!updated || updated.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+      return json({ ok: true })
     }
 
     if (body.action === 'category-save') {

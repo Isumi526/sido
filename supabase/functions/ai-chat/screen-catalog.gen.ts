@@ -93,6 +93,20 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
     "help": []
   },
   {
+    "path": "/name-readings",
+    "name": "読み仮名の未入力",
+    "title": "読み仮名の未入力",
+    "requiresManagement": true,
+    "requiresEstimate": false,
+    "requiresApprover": false,
+    "feature": null,
+    "help": [
+      "読み仮名がまだ入っていない現場・業者・作業区分の一覧です。",
+      "欄に読み仮名（ひらがな・カタカナ）を入れて「保存」を押すと、一覧から消えます。",
+      "作業員アプリを英語で使う人には、読み仮名をもとに名前がローマ字で表示されます（例：山田内装 → Yamada Naisou）。読み仮名が無いものは日本語のまま表示されます。"
+    ]
+  },
+  {
     "path": "/assets",
     "name": "備品・カード",
     "title": "備品・カード（ETC など）",
