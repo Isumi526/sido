@@ -81,10 +81,13 @@ test('★1つずつ入力で送った日報が、いつもの画面で同じ内�
   expect(saved.sites[0].siteName, '選んだ現場').toBe(siteValue)
   expect(Number(saved.sites[0].expenses?.garbageFactoryM3), 'ゴミの量').toBe(1.5)
 
-  // いつもの画面で開いても同じ内容
-  await page.evaluate(() => localStorage.setItem('report_form_mode', 'classic'))
+  // 次に開いた時も、サーバに残した「1つずつ入力」が既定（端末の選択が無い時）
   await page.goto(`/report?edit=${DAY}`, { waitUntil: 'networkidle' })
-  await expect(page.getByTestId('form-mode-classic')).toHaveAttribute('aria-selected', 'true', { timeout: 20000 })
+  await expect(page.getByTestId('form-mode-steps'), '次回の既定').toHaveAttribute('aria-selected', 'true', { timeout: 20000 })
+
+  // いつもの画面に切り替えても同じ内容
+  await page.getByTestId('form-mode-classic').click()
+  await expect(page.getByTestId('form-mode-classic')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('report-note')).toHaveValue(NOTE)
   await expect(page.getByTestId('site-select-0')).toHaveValue(siteValue!)
   await expect(page.getByTestId('step-head'), 'いつもの画面にはステップの見出しは出ない').toHaveCount(0)
