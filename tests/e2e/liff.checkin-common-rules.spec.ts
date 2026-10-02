@@ -8,6 +8,9 @@
 import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
+// 位置は記録ボタンで一緒に取る（2026-10-02 I-2）。取れない端末の動きは liff.checkin-one-tap が見る
+test.use({ geolocation: { latitude: 35.6812, longitude: 139.7671 }, permissions: ['geolocation'] })
+
 const TS = Date.now()
 const RULE_BOTH = `E2E共通_両方_${TS}`
 const RULE_IN   = `E2E共通_出勤のみ_${TS}`
@@ -71,11 +74,10 @@ test('★同意した文面が打刻に記録される（あとから証跡と�
   await passWorkStatusGate(page)
   await expect(page.locator('.rules-list')).toContainText(RULE_BOTH, { timeout: 15000 })
 
-  // 全ルールにチェック → 位置情報を試行 → 送信
+  // 全ルールにチェック → 送信（位置は記録ボタンで一緒に取る・2026-10-02 I-2）
   const rows = page.locator('.rule-row')
   const n = await rows.count()
   for (let i = 0; i < n; i++) await rows.nth(i).click()
-  await page.locator('.loc-get').first().click()
   const submit = page.getByRole('button', { name: '出勤を記録する' }).last()
   await expect(submit).toBeEnabled({ timeout: 20000 })
   await submit.click()

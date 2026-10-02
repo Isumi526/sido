@@ -22,7 +22,7 @@
           <button v-if="otherTools.length" type="button" class="btn-ghost-sm" data-testid="location-others-toggle" @click="showOthers = !showOthers">{{ $t('tools.othersToggle', { n: otherTools.length }) }}</button>
           <ul v-if="showOthers" class="list" data-testid="location-other-tools">
             <li v-for="t in otherTools" :key="t.id" class="row" :data-testid="`location-return-row-${t.id}`">
-              <span class="row-link">{{ t.name }}<span class="row-sub">（{{ t.workers?.name ?? '—' }}）</span></span>
+              <span class="row-link">{{ t.name }}<span class="row-sub">（{{ $nm(t.workers?.name) || '—' }}）</span></span>
               <button type="button" class="btn-return" :data-testid="`location-return-${t.id}`" @click="startReturn(t.id)">{{ $t('tools.returnThis') }}</button>
             </li>
           </ul>

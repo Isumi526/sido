@@ -89,9 +89,6 @@ async function doCheckout(page: import('@playwright/test').Page) {
   //  送信できない。このテストの主題ではないので、出ている分は素直に全部チェックする。
   const rules = page.locator('.rule-row')
   for (let i = 0, n = await rules.count(); i < n; i++) await rules.nth(i).click()
-  // ★位置情報は「明示タップで取得を試みる」設計（iOS LINEで自動要求だと無言で拒否されるため）。
-  //  タップしないと locationState が idle のままで送信ボタンが永久に disabled。
-  await page.locator('.loc-get').first().click()
   const submit = page.getByRole('button', { name: '退勤を記録する' }).last()
   await expect(submit, '位置情報が解決して送信できる状態になる').toBeEnabled({ timeout: 20000 })
   await submit.click()

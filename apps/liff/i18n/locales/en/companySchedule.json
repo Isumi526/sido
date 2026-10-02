@@ -8,5 +8,6 @@
   "noPeriod": "Period not set",
   "noPeriodGroup": "Period TBD",
   "openFailed": "Could not open the schedule",
-  "showOther": "Show estimating / finished sites"
+  "showOther": "Show estimating / finished sites",
+  "monthLabel": "{mon}"
 }

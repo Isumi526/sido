@@ -30,5 +30,14 @@
   "roleSite": "Site",
   "language": "Language",
   "langJa": "日本語",
-  "langEn": "English"
+  "langEn": "English",
+  "show": "Show",
+  "hide": "Hide",
+  "hint": "Hint",
+  "showHint": "Show hint: {label}",
+  "consentTitle": "How we use your personal information",
+  "consentAgree": "I have read the above and I agree",
+  "consentSubmit": "Agree and continue",
+  "consentSending": "Sending…",
+  "consentSendFailed": "Could not send. Check your connection and try again."
 }

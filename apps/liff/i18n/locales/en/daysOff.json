@@ -1,0 +1,27 @@
+{
+  "title": "Days off and paid leave",
+  "lead": "Enter your days off and paid leave in advance, and the daily report for that day is sent automatically. You can also set your weekly day off once.",
+  "loadError": "Could not load. Please open this screen again later.",
+  "weeklyTitle": "Weekly day off",
+  "weeklyHint": "Tap the day(s) you are off every week (tap again to remove). The daily report is sent automatically on these days every week.",
+  "weeklySaved": "Weekly day off saved.",
+  "addTitle": "Add a day off or paid leave",
+  "date": "Date",
+  "kind": {
+    "off": "Day off",
+    "paid_leave": "Paid leave"
+  },
+  "addButton": "Add",
+  "saving": "Saving…",
+  "added": "Added {date} as {kind}.",
+  "balanceShort": "You will not have enough paid leave left. On days without enough paid leave, the report is not sent automatically: send it from the daily report screen as paid leave on that day (it goes to the manager for approval).",
+  "upcomingTitle": "Upcoming days off and paid leave",
+  "upcomingEmpty": "Nothing yet.",
+  "remove": "Remove",
+  "removeConfirm": "Remove the entry for {date}?",
+  "autoNote": "At 8 pm on that day, the daily report is sent automatically as \"Not working\" (or \"Paid leave\"). It is not sent if you checked in that day. You can correct it the same way as any daily report.",
+  "errPast": "You cannot enter days before today. Please send it from the daily report screen.",
+  "errReportExists": "The daily report for that day has already been sent.",
+  "errTooFar": "You cannot enter days more than one year ahead.",
+  "saveFailed": "Could not save. Please try again later."
+}

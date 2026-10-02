@@ -34,5 +34,17 @@
   "confirmDelete": "「{name}」を削除しますか？（管理者が復元できます）",
   "confirmDeleteComment": "コメントを削除しますか？",
   "errorNameRequired": "業者名を入力してください",
-  "errorSaveFailed": "保存に失敗しました"
+  "errorSaveFailed": "保存に失敗しました",
+  "tradeLgs": "軽鉄（LGS）工事",
+  "tradeBoard": "ボード工事",
+  "tradeCarpentry": "木工・造作工事",
+  "tradePlaster": "左官工事",
+  "tradeWallpaper": "クロス（壁紙）工事",
+  "tradePaint": "塗装工事",
+  "tradeFloor": "床仕上げ工事",
+  "tradeFittings": "木製・金属製建具工事",
+  "tradeElectric": "電気設備工事",
+  "tradeHvac": "空調・換気設備工事",
+  "tradePlumbing": "給排水衛生設備工事",
+  "tradeOther": "その他"
 }

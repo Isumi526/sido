@@ -11,6 +11,7 @@
 //    EF からは「枠」と「明細」だけ受け取り、判定はここで共有関数に通す。
 // ============================================================
 import { computeBudgetUsage, expenseMonthKey, type BudgetUsage } from '~/composables/expense-flatten.gen'
+import { gt } from '~/utils/i18n-global'
 
 export interface PersonalExpenseInput {
   date: string
@@ -33,6 +34,19 @@ export interface PersonalExpenseInput {
 export interface OfficeOption { id: string; name: string; kind: string }
 
 const EDGE_FN = 'personal-expense-submit'
+
+const ACCOUNT_LABEL_KEYS: Record<string, string> = {
+  '旅費交通費': 'travel',
+  '車両費': 'vehicle',
+  '消耗品費': 'supplies',
+  '材料費': 'materials',
+  '接待交際費': 'entertainment',
+  '会議費': 'meeting',
+  '雑費': 'misc',
+}
+export function personalExpenseAccountKey(account: string): string | null {
+  return ACCOUNT_LABEL_KEYS[account] ?? null
+}
 
 export const usePersonalExpense = () => {
   const supabase = useSupabase()
@@ -58,7 +72,7 @@ export const usePersonalExpense = () => {
       body: JSON.stringify({ action, line_id_token: lineIdToken, dev_line_user_id: devLineUserId, ...payload }),
     })
     const json = await res.json().catch(() => null)
-    if (!res.ok || !json?.ok) throw new Error(json?.message ?? json?.error ?? `失敗しました(${res.status})`)
+    if (!res.ok || !json?.ok) throw new Error(json?.message ?? json?.error ?? gt('personalExpense.requestFailed', { status: res.status }))
     return json
   }
 

@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <ReportOnboarding ref="onboardingRef" />
-    <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="$t('report.subtitle')" guide="report" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
     <button type="button" class="ob-replay" @click="onboardingRef?.open()"><span class="material-symbols-rounded ob-replay-icon">help</span>{{ $t('onboarding.replay') }}</button>
 
     <!-- ★退勤打刻から直行してきた時の手応え。完了画面を挟むとそこで離脱する人がいるので
@@ -151,14 +151,14 @@
                 <span>{{ $t('report.site') }}</span>
                 <select v-model="d.siteName" class="select" :data-testid="`voice-site-${di}`">
                   <option value="">{{ $t('report.voiceNoChange') }}</option>
-                  <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ n }}</option>
+                  <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ $nm(n) }}</option>
                 </select>
               </label>
               <label class="voice-field">
                 <span>{{ $t('report.workCategory') }}</span>
                 <select v-model="d.workCategoryId" class="select" :data-testid="`voice-workcat-${di}`">
                   <option value="">{{ $t('report.voiceNoChange') }}</option>
-                  <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+                  <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
                 </select>
               </label>
               <div class="voice-field-row">
@@ -255,7 +255,7 @@
               <!-- ★無効化済みの元請け。理由は下の現場selectのコメントと同じ -->
               <option v-if="isRetiredOption(site.contractorName, master.contractorNames.value)"
                       :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
-                {{ $t('report.retiredOption', { name: site.contractorName }) }}
+                {{ $t('report.retiredOption', { name: $nm(site.contractorName) }) }}
               </option>
               <!-- ★選択肢に紐づく現場の件数を出す（2026-09-04）。
                    本番実測で元請け62社のうち37社（6割）は紐づく現場がゼロで、
@@ -263,8 +263,8 @@
                    選ぶ前に「現場なし」と分かれば、そもそも空振りしない。 -->
               <option v-for="name in master.contractorNames.value" :key="name" :value="name">
                 {{ siteCountOf(name)
-                    ? $t('report.contractorSiteCount', { name, count: siteCountOf(name) })
-                    : $t('report.contractorNoSite', { name }) }}
+                    ? $t('report.contractorSiteCount', { name: $nm(name), count: siteCountOf(name) })
+                    : $t('report.contractorNoSite', { name: $nm(name) }) }}
               </option>
               <option value="__other__">{{ $t('report.addNewContractor') }}</option>
             </select>
@@ -295,36 +295,36 @@
                    「終わった現場をプルダウンから消す」という無効化の目的は損なわない。 -->
               <option v-if="isRetiredOption(site.siteName, showOtherSites ? [...master.siteNames.value, ...otherStatusSiteNames] : master.siteNames.value)"
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
-                {{ $t('report.retiredOption', { name: site.siteName }) }}
+                {{ $t('report.retiredOption', { name: $nm(site.siteName) }) }}
               </option>
               <!-- ★最近の現場（本人の直近7日の日報で稼働頻度の高い順に最大3件・2026-09-10 会議
                    「毎日同じ現場に入ることが多い…最近多いやつは上の方に」）。近道なので下の階層にも同じ現場が出てよい。 -->
               <optgroup v-if="recentSiteNames.length" :label="$t('report.siteGroupRecent')" data-testid="site-group-recent">
-                <option v-for="name in recentSiteNames" :key="`recent-${name}`" :value="name" :data-testid="`recent-site-${si}`">{{ name }}</option>
+                <option v-for="name in recentSiteNames" :key="`recent-${name}`" :value="name" :data-testid="`recent-site-${si}`">{{ $nm(name) }}</option>
               </optgroup>
               <!-- ★元請けを選んでいる時は「この元請けに紐づく現場」を先頭に出して探しやすくする。
                    選んでいない時は従来どおり元請けごとのoptgroupで全件出す。
                    どちらの場合も全現場を選べる（絞り込みで候補が消えて選べなくならないように）。 -->
               <template v-if="groupedSiteNames(site.contractorName).linked.length">
                 <optgroup :label="$t('report.siteGroupLinked')">
-                  <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
+                  <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ $nm(name) }}</option>
                 </optgroup>
                 <optgroup :label="$t('report.siteGroupOther')">
-                  <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
+                  <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ $nm(name) }}</option>
                 </optgroup>
               </template>
               <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
-                <optgroup :label="grp.contractorName ?? $t('report.siteGroupUnlinked')">
-                  <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
+                <optgroup :label="grp.contractorName ? $nm(grp.contractorName) : $t('report.siteGroupUnlinked')">
+                  <option v-for="name in grp.sites" :key="name" :value="name">{{ $nm(name) }}</option>
                 </optgroup>
               </template>
               <!-- オフィス・工場（現場マスタの区分≠現場）は末尾にまとめる（2026-09-13） -->
               <optgroup v-if="master.facilitySiteNames.value.length" :label="$t('report.siteGroupFacility')" data-testid="site-group-facility">
-                <option v-for="name in master.facilitySiteNames.value" :key="name" :value="name">{{ name }}</option>
+                <option v-for="name in master.facilitySiteNames.value" :key="name" :value="name">{{ $nm(name) }}</option>
               </optgroup>
               <!-- 見積中（現調）・完了（過去日報の直し）の現場は「他の現場を表示」を入れた時だけ（2026-09-19 A-2・表示マトリクス #12） -->
               <optgroup v-if="showOtherSites && otherStatusSiteNames.length" :label="$t('report.siteGroupOtherStatus')" data-testid="site-group-other-status">
-                <option v-for="name in otherStatusSiteNames" :key="`other-${name}`" :value="name">{{ name }}</option>
+                <option v-for="name in otherStatusSiteNames" :key="`other-${name}`" :value="name">{{ $nm(name) }}</option>
               </optgroup>
               <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
               <option v-if="canCreateSite" value="__other__">{{ $t('report.addNewSite') }}</option>
@@ -339,7 +339,7 @@
                  （2026-09-04）。本番では6割の元請けが該当するため、無言だと
                  「選んだのに何も変わらない＝壊れている」と見える。 -->
             <p v-if="hasContractorWithoutSites(site)" class="no-linked-note" :data-testid="`no-linked-site-note-${si}`">
-              {{ $t('report.noLinkedSiteNote', { name: site.contractorName }) }}
+              {{ $t('report.noLinkedSiteNote', { name: $nm(site.contractorName) }) }}
             </p>
             <!-- ★現場名を文字で残せるようにする（2026-08-27）。
                  これが無いと「現場未設定」を選んだ時点で “どの現場だったか” がシステム上
@@ -370,7 +370,7 @@
                 class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
                 @click="pickSimilarSite(si, name)"
                 @keydown.enter.prevent="pickSimilarSite(si, name)"
-              >{{ name }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
+              >{{ $nm(name) }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
             </div>
             <!-- ★新規現場のときの元請け選択はここには置かない（2026-09-04）。
                  上の「元請け業者」プルダウンを復活させたので、新規現場でもそちらで選べる。
@@ -386,7 +386,7 @@
                 「何を選べばいいのか分からない空欄」になる（2026-08-17 本番で指摘）。 -->
           <Field v-if="workCategoryOptions.length > 1 && isSiteChosen(site)" :label="$t('report.workCategory')">
             <select v-model="site.workCategoryId" class="select" :data-testid="`work-category-${si}`" @change="onSiteChange(si)">
-              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
             </select>
           </Field>
 
@@ -470,10 +470,10 @@
                       <span class="break-auto">
                         <!-- ★休憩なし/短縮が承認された日は、その分数を使う（管理者が承認した内容がその日の正） -->
                         <template v-if="approvedAdjust?.breakMinutes !== null && approvedAdjust?.breakMinutes !== undefined">
-                          <span data-testid="approved-break">{{ approvedAdjust.breakMinutes === 0 ? $t('report.breakNone') : `${approvedAdjust.breakMinutes}分` }}（{{ $t('report.breakApproved') }}）</span>
+                          <span data-testid="approved-break">{{ approvedAdjust.breakMinutes === 0 ? $t('report.breakNone') : $t('report.previewBreakMin', { min: approvedAdjust.breakMinutes }) }}（{{ $t('report.breakApproved') }}）</span>
                         </template>
                         <template v-else-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
-                        <template v-else-if="site.workers[0].breakSnapshot">{{ effectiveBreakMinutes(site.workers[0]) }}分（現場設定）</template>
+                        <template v-else-if="site.workers[0].breakSnapshot">{{ $t('report.breakSiteSetting', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                         <template v-else>{{ $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                       </span>
                     </div>
@@ -514,7 +514,7 @@
                 <div class="row-worker">
                   <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }" :data-testid="`sub-select-${si}-${si2}`">
                     <option value="" disabled>{{ $t('report.selectSubcontractor') }}</option>
-                    <option v-for="name in subOptions(si, si2, site.siteName, sub.subcontractorName)" :key="name" :value="name">{{ name }}</option>
+                    <option v-for="name in subOptions(si, si2, site.siteName, sub.subcontractorName)" :key="name" :value="name">{{ $nm(name) }}</option>
                     <option v-if="subQuery[`${si}-${si2}`] && !subOptions(si, si2, site.siteName, sub.subcontractorName).length" value="" disabled>{{ $t('report.subSearchNoHit') }}</option>
                     <option value="__other__">{{ $t('report.otherNew') }}</option>
                   </select>
@@ -613,7 +613,7 @@
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
                     </div>
-                    <input v-model="pk.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                    <input v-model="pk.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" @keydown.enter.prevent />
                     <input v-model="pk.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
@@ -642,7 +642,7 @@
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
-                    <input v-model="hw.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                    <input v-model="hw.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" @keydown.enter.prevent />
                     <input v-model="hw.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
@@ -748,7 +748,7 @@
                     <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
-                  <input v-model="tr.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                  <input v-model="tr.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" @keydown.enter.prevent />
                   <input v-model="tr.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
@@ -787,7 +787,7 @@
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
                     <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
                   </div>
-                  <input v-model="ho.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                  <input v-model="ho.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" @keydown.enter.prevent />
                   <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addHotel(si)">{{ $t('report.addHotel') }}</button>
@@ -869,11 +869,11 @@
                     <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                   </div>
-                  <input v-model="ot.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                  <input v-model="ot.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" @keydown.enter.prevent />
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <select v-model="ot.account" class="select mt6">
-                    <option value="">{{ $t('report.accountAuto', { name: '消耗品費' }) }}</option>
-                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+                    <option value="">{{ $t('report.accountAuto', { name: accountLabel('消耗品費') }) }}</option>
+                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ accountLabel(a) }}</option>
                   </select>
                   <!-- 接待交際費/会議費は税務上「誰と行ったか」の記録が必須 -->
                   <input v-if="needsCompanions(ot)" v-model="ot.companions" type="text" class="input mt6" :class="{ 'input-required': !ot.companions?.trim() }"
@@ -952,7 +952,7 @@
           </div>
           <div class="preview-head">
             <span>{{ previewData.dateLabel }} {{ $t('report.subtitle') }}</span>
-            <span class="preview-sender">{{ previewData.senderName }}</span>
+            <span class="preview-sender">{{ $nm(previewData.senderName) }}</span>
           </div>
 
           <p v-if="previewData.mode === 'paid_leave'" class="preview-leave">{{ $t('report.badgePaidLeave') }}</p>
@@ -962,13 +962,13 @@
             <div v-for="(site, si) in previewData.sites" :key="si" class="preview-site-wrap">
               <div class="preview-site-title">
                 <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">location_on</span>
-                {{ site.name }}
-                <span v-if="site.contractor" class="preview-contractor">（{{ site.contractor }}）</span>
+                {{ $nm(site.name) }}
+                <span v-if="site.contractor" class="preview-contractor">（{{ $nm(site.contractor) }}）</span>
               </div>
               <table v-if="site.workers.length" class="preview-table">
                 <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workTime') }}</th><th>{{ $t('report.workHours') }}</th><th>{{ $t('report.previewBreak') }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td class="preview-time">{{ w.timeRange }}</td><td>{{ w.hours }}</td><td class="preview-break">{{ w.breakMinutes > 0 ? $t('report.previewBreakMin', { min: w.breakMinutes }) : '—' }}</td></tr>
+                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ $nm(w.name) }}</td><td class="preview-time">{{ w.timeRange }}</td><td>{{ w.hours }}</td><td class="preview-break">{{ w.breakMinutes > 0 ? $t('report.previewBreakMin', { min: w.breakMinutes }) : '—' }}</td></tr>
                 </tbody>
               </table>
               <ul v-if="site.expenses.length" class="preview-list">
@@ -1046,6 +1046,7 @@
 </template>
 
 <script setup lang="ts">
+import { mdWithWeekday, ymdWithWeekday } from '~/utils/date-label'
 import { todayStr } from '~/composables/schedule-core.gen'
 import { primaryWorkCategory } from '~/composables/work-category-primary.gen'
 import { isOverDefault, normalizeVehicleOverages, denormalizeVehicleOverages, DISTANCE_FIELDS } from '~/composables/distance-overage.gen'
@@ -1063,6 +1064,19 @@ import { useI18n } from 'vue-i18n'
 import type { User, SiteReport } from '~/types'
 
 const { t } = useI18n()
+// ★t を引数名・ループ変数に使っている関数（終了時刻の表示・電車の明細）の中で翻訳するための別名
+const i18nT = t
+// 英語表示で名前をローマ字に（II-2）
+const nm = useNm()
+/** 科目の表示名。保存する値は日本語の科目名のまま（集計・会計の取り込みがこの文字列を見る） */
+const ACCOUNT_LABEL_KEYS: Record<string, string> = {
+  '旅費交通費': 'travel', '車両費': 'vehicle', '消耗品費': 'supplies', '材料費': 'materials',
+  '接待交際費': 'entertainment', '会議費': 'meeting', '雑費': 'misc',
+}
+function accountLabel(a: string): string {
+  const k = ACCOUNT_LABEL_KEYS[a]
+  return k ? t(`report.accountLabels.${k}`) : a
+}
 
 // オンボーディングを手動で再表示するための参照（使い方ガイドボタン）
 const onboardingRef = ref<{ open: () => void } | null>(null)
@@ -1730,9 +1744,7 @@ const nextUnsubmittedDate = ref<string | null>(null)
 
 const nextDateLabel = computed(() => {
   if (!nextUnsubmittedDate.value) return ''
-  const d = new Date(nextUnsubmittedDate.value + 'T00:00:00')
-  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
-  return `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`
+  return mdWithWeekday(nextUnsubmittedDate.value)
 })
 
 // 稼働有無
@@ -1824,9 +1836,7 @@ const isSunday = computed(() =>
 const dateWithWeekday = computed(() => {
   const ds = report.form.value.date
   if (!ds) return ''
-  const d = new Date(ds + 'T00:00:00')
-  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
-  return `${ds}（${weekdays[d.getDay()]}）`
+  return ymdWithWeekday(ds)
 })
 
 // 現場跨ぎ残業対応: 全行（現場×作業員）のプレビュー用 breakdown。作業員ごとに startTime 順で累積する。
@@ -2400,7 +2410,7 @@ async function revealReceiptRow(miss: ReceiptMiss) {
  */
 function siteDisplayName(siteName: string | null | undefined, customSiteName?: string | null): string {
   if (siteName === '__unset__') return t('report.siteUnset')
-  if (siteName === '__other__') return customSiteName || '新規現場'
+  if (siteName === '__other__') return customSiteName || t('report.newSiteFallback')
   return siteName || ''
 }
 
@@ -2412,7 +2422,7 @@ function findWorkerTimeOverlap(): string | null {
     let start = parseMin(w.startTime)
     let end   = parseMin(w.endTime)
     if (end <= start) end += 1440                        // 日跨ぎ補正
-    const name = siteDisplayName(s.siteName, s.customSiteName) || '現場'
+    const name = siteDisplayName(s.siteName, s.customSiteName) || t('report.siteFallback')
     segs.push({ name, start, end })
   }
   segs.sort((a, b) => a.start - b.start)
@@ -2973,7 +2983,7 @@ async function preparePendingOvertime(): Promise<boolean> {
 /** 終了時刻の表示。開始以前の時刻は翌日側なので「翌」を付ける（値は変えない） */
 function endTimeLabel(si: number, t: string): string {
   const start = report.form.value.sites[si]?.workers?.[0]?.startTime
-  return start && parseMin(t) <= parseMin(start) ? `翌${t}` : t
+  return start && parseMin(t) <= parseMin(start) ? i18nT('report.nextDayTime', { time: t }) : t
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -3217,10 +3227,9 @@ const previewData = computed<PreviewData>(() => {
   const form      = report.form.value
   const isWorking = isWorkingStr.value === 'working'
   const d         = new Date(form.date + 'T00:00:00')
-  const weekdays  = ['日', '月', '火', '水', '木', '金', '土']
-  const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`
+  const dateLabel = mdWithWeekday(d)
   const sunday    = d.getDay() === 0
-  const senderName = currentUser.value?.real_name || '（未登録）'
+  const senderName = currentUser.value?.real_name || t('report.unregisteredName')
 
   if (isWorkingStr.value === 'paid_leave') {
     return { dateLabel, senderName, mode: 'paid_leave', note: form.note || '', sites: [], totalHours: 0 }
@@ -3247,13 +3256,13 @@ const previewData = computed<PreviewData>(() => {
         ?? computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', effectiveBreakWindows(w) ? 0 : effectiveBreakMinutes(w), sunday, 0, effectiveBreakWindows(w))
       const parts: string[] = []
       if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
-      if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
-      if (h.hoursOT)            parts.push(`残業${h.hoursOT}h`)
-      if (h.hoursNight)         parts.push(`深夜${h.hoursNight}h`)
-      if (h.hoursOTNight)       parts.push(`深夜残業${h.hoursOTNight}h`)
-      if (h.hoursSundayOT)      parts.push(`休日残業${h.hoursSundayOT}h`)
-      if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
-      if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
+      if (h.hoursSunday)        parts.push(t('report.preview_hoursSunday', { h: h.hoursSunday }))
+      if (h.hoursOT)            parts.push(t('report.preview_hoursOT', { h: h.hoursOT }))
+      if (h.hoursNight)         parts.push(t('report.preview_hoursNight', { h: h.hoursNight }))
+      if (h.hoursOTNight)       parts.push(t('report.preview_hoursOTNight', { h: h.hoursOTNight }))
+      if (h.hoursSundayOT)      parts.push(t('report.preview_hoursSundayOT', { h: h.hoursSundayOT }))
+      if (h.hoursSundayNight)   parts.push(t('report.preview_hoursSundayNight', { h: h.hoursSundayNight }))
+      if (h.hoursSundayOTNight) parts.push(t('report.preview_hoursSundayOTNight', { h: h.hoursSundayOTNight }))
       const timeRange = w.startTime && w.endTime ? `${w.startTime}〜${w.endTime}` : '—'
       totalHours += h.hoursNormal + h.hoursSunday + h.hoursOT + h.hoursNight
         + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayNight + h.hoursSundayOTNight
@@ -3263,49 +3272,49 @@ const previewData = computed<PreviewData>(() => {
     const exp = site.expenses || {}
     const expenses: string[] = []
     if (exp.carpool) {
-      expenses.push('乗合い')
+      expenses.push(t('report.optCarpool'))
     } else {
       for (const v of (exp.vehicles || [])) {
         if (!v) continue
         const p: string[] = []
         if (v.vehicleName) p.push(v.vehicleName)
-        if (v.distanceKm)  p.push(`往復${v.distanceKm}km`)
-        if (v.dieselKm)    p.push(`軽油${v.dieselKm}km`)
-        if (v.parkingYen)  p.push(`駐車¥${Number(v.parkingYen).toLocaleString()}`)
-        if (v.highwayYen)  p.push(`高速¥${Number(v.highwayYen).toLocaleString()}`)
+        if (v.distanceKm)  p.push(t('report.previewRoundTripKm', { km: v.distanceKm }))
+        if (v.dieselKm)    p.push(t('report.previewDieselKm', { km: v.dieselKm }))
+        if (v.parkingYen)  p.push(t('report.previewParkingYen', { yen: Number(v.parkingYen).toLocaleString() }))
+        if (v.highwayYen)  p.push(t('report.previewHighwayYen', { yen: Number(v.highwayYen).toLocaleString() }))
         if (v.etcUsed)     p.push(`ETC${v.etcCard || ''}`)
         if (p.length) expenses.push(p.join(' '))
       }
     }
     for (const t of (exp.trains || []))
-      if (t?.yen) expenses.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
+      if (t?.yen) expenses.push(`${t.label || i18nT('report.previewTrainDefault')} ¥${Number(t.yen).toLocaleString()}`)
     for (const o of (exp.others || []))
-      if (o?.yen) expenses.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
+      if (o?.yen) expenses.push(`${o.label || t('report.previewOtherDefault')} ¥${Number(o.yen).toLocaleString()}`)
     for (const ho of (exp.hotels || []))
-      if (ho?.yen) expenses.push(`${ho.label || 'ホテル'} ¥${Number(ho.yen).toLocaleString()}`)
+      if (ho?.yen) expenses.push(`${ho.label || t('report.previewHotelDefault')} ¥${Number(ho.yen).toLocaleString()}`)
     const _hasHotelsArr = (exp.hotels || []).some((h: any) => h?.yen)
     if (exp.hotelYen && !_hasHotelsArr)
-      expenses.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
+      expenses.push(`${exp.hotelName || t('report.previewHotelDefault')} ¥${Number(exp.hotelYen).toLocaleString()}`)
     if (exp.leopalaceYen && !_hasHotelsArr)
-      expenses.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
+      expenses.push(`${exp.leopalaceName || t('report.previewLeopalaceDefault')} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
     if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
       const g: string[] = []
-      if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
-      if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
-      expenses.push(`ゴミ ${g.join(' ')}`)
+      if (exp.garbageFactoryM3) g.push(t('report.previewGarbageWood', { m3: exp.garbageFactoryM3 }))
+      if (exp.garbageSiteM3)    g.push(t('report.previewGarbageMixed', { m3: exp.garbageSiteM3 }))
+      expenses.push(`${t('report.garbage')} ${g.join(' ')}`)
     }
     if (exp.hasPickup) {
       const n = (exp.pickupPhotos?.length ?? 0) + (exp.pickupPhotoUrls?.length ?? 0)
-      expenses.push(`引き上げ材料 ${exp.pickupNote ? exp.pickupNote + ' ' : ''}${n ? `写真${n}枚` : ''}`.trim())
+      expenses.push(`${t('report.pickup')} ${exp.pickupNote ? exp.pickupNote + ' ' : ''}${n ? t('report.previewPhotoCount', { n }) : ''}`.trim())
     }
     if (exp.entertainmentYen)
-      expenses.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
+      expenses.push(`${exp.entertainmentLabel || t('report.previewMiscDefault')} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
 
     const subs: string[] = (site.subcontractors || [])
       .filter((s: any) => s.subcontractorName)
       .map((s: any) => {
-        const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
-        return `${name} ${s.count || 1}人`
+        const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || t('report.newSubFallback')) : nm(s.subcontractorName)
+        return t('report.previewSubCount', { name, n: s.count || 1 })
       })
 
     sites.push({ name: displayName, contractor: contractorName, workers, expenses, subs, note: site.siteNote || '' })
@@ -3905,7 +3914,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'parking', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }
@@ -3919,7 +3928,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'highway', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }
@@ -3934,7 +3943,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'train', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }
@@ -3951,7 +3960,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'other', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }
@@ -3967,7 +3976,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'entertainment', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }
@@ -3982,7 +3991,7 @@ async function analyzeReceipt(
     }
     if (all.length > 1) {
       const n = await spreadExtraReceipts(si, 'hotel', otherIndex!, all)
-      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+      if (n) showReceiptToast('success', t('report.receiptSplitToast', { n: n + 1 }))
     }
     return
   }

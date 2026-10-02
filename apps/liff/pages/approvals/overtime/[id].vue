@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('overtimeApproval.detailTitle')" />
+    <AppNav :subtitle="$t('overtimeApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/overtime" class="back" data-testid="ota-back">
@@ -26,12 +26,12 @@
 
         <section class="card">
           <div class="who">
-            <span class="name" data-testid="ota-name">{{ d.item.worker_name || '—' }}</span>
+            <span class="name" data-testid="ota-name">{{ $nm(d.item.worker_name) || '—' }}</span>
             <span v-if="d.item.is_late" class="late-badge">{{ $t('overtimeApproval.late') }}</span>
           </div>
           <dl class="detail">
             <dt>{{ $t('overtimeApproval.date') }}</dt><dd>{{ fmtDate(d.item.date) }}</dd>
-            <dt>{{ $t('overtimeApproval.sites') }}</dt><dd>{{ d.item.site_names?.length ? d.item.site_names.join('、') : '—' }}</dd>
+            <dt>{{ $t('overtimeApproval.sites') }}</dt><dd>{{ d.item.site_names?.length ? d.item.site_names.map($nm).join(', ') : '—' }}</dd>
             <!-- ★承認すると計上される時刻（日報に入力された時刻）を先に・目立たせる（夜に黙って伸ばした時刻を見落とさない） -->
             <template v-if="d.item.reported_end_time">
               <dt>{{ $t('overtimeApproval.reportedEnd') }}</dt>
@@ -75,7 +75,7 @@
             <span class="ev-label">{{ $t('overtimeApproval.report') }}</span>
             <span v-if="!d.report" class="ev-none" data-testid="ota-no-report">{{ $t('overtimeApproval.noReport') }}</span>
             <span v-else-if="d.report.is_working === false" class="ev-none">{{ $t('overtimeApproval.reportOff') }}</span>
-            <span v-else data-testid="ota-report">{{ $t('overtimeApproval.reportSubmitted') }}{{ d.report.siteNames.length ? '：' + d.report.siteNames.join('、') : '' }}</span>
+            <span v-else data-testid="ota-report">{{ $t('overtimeApproval.reportSubmitted') }}{{ d.report.siteNames.length ? '：' + d.report.siteNames.map($nm).join(', ') : '' }}</span>
           </div>
           <p class="note">{{ $t('overtimeApproval.evidenceNote') }}</p>
         </section>

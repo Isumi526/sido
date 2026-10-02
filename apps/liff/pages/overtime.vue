@@ -13,7 +13,7 @@
 
         <!-- 本日の状況 -->
         <section class="ot-card">
-          <div class="ot-card-title">{{ $t('overtime.statusLabel') }}（{{ $t('overtime.todayLabel') }} {{ today }}）</div>
+          <div class="ot-card-title">{{ $t('overtime.statusHeading', { label: $t('overtime.statusLabel'), today: $t('overtime.todayLabel'), date: today }) }}</div>
 
           <div v-if="todayStatus === 'approved'" class="ot-status approved"><span class="material-symbols-rounded ot-icon">check_circle</span>{{ $t('overtime.statusApproved') }}</div>
           <div v-else-if="todayStatus === 'pending'" class="ot-status pending">
@@ -26,7 +26,7 @@
             <span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}
             <!-- 管理者が却下時に添えたコメント（2026-09-17 大塚さん「なんで残業したか聞きたい」）。
                  これを見て理由を書いて申請し直す -->
-            <span v-if="todayNote" class="ot-note" data-testid="ot-today-note">{{ $t('overtime.decisionNote') }}：{{ todayNote }}</span>
+            <span v-if="todayNote" class="ot-note" data-testid="ot-today-note">{{ $t('overtime.decisionNoteLine', { label: $t('overtime.decisionNote'), note: todayNote }) }}</span>
           </div>
 
           <!-- ★締切前なら申請済みでも内容を変更・追加できる（2026-09-13 辻さん）。
@@ -54,12 +54,12 @@
             <select v-model="endTime" class="ot-input">
               <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
             </select>
-            <label class="ot-label">対象現場（複数選択可・責任者へ通知）<span v-if="selectedSites.length" class="ot-sel-count">選択 {{ selectedSites.length }}件</span></label>
-            <input v-if="siteOptions.length > 6" v-model="siteQuery" type="text" class="ot-input ot-site-search" placeholder="現場名で絞り込み" />
+            <label class="ot-label">{{ $t('overtime.targetSitesLabel') }}<span v-if="selectedSites.length" class="ot-sel-count">{{ $t('overtime.selectedCount', { n: selectedSites.length }) }}</span></label>
+            <input v-if="siteOptions.length > 6" v-model="siteQuery" type="text" class="ot-input ot-site-search" :placeholder="$t('overtime.siteSearchPlaceholder')" />
             <div class="ot-sites">
-              <label v-for="s in filteredSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="selectedSites" /> {{ s }}</label>
-              <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
-              <p v-else-if="!filteredSiteOptions.length" class="ot-sites-empty">「{{ siteQuery }}」に一致する現場がありません</p>
+              <label v-for="s in filteredSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="selectedSites" /> {{ $nm(s) }}</label>
+              <p v-if="!siteOptions.length" class="ot-sites-empty">{{ $t('overtime.noSites') }}</p>
+              <p v-else-if="!filteredSiteOptions.length" class="ot-sites-empty">{{ $t('overtime.noSiteMatch', { q: siteQuery }) }}</p>
             </div>
             <!-- ★早朝入り・休憩の申告（2026-08-10 大塚さん）。どちらも任意。
                  承認されて初めて日報の入力制限が緩む＝申請しただけでは時間は広がらない。 -->
@@ -72,7 +72,7 @@
             <select v-model="breakMinutes" class="ot-input" data-testid="ot-break">
               <option value="">{{ $t('overtime.breakNone') }}</option>
               <option value="0">{{ $t('overtime.breakZero') }}</option>
-              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
+              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ $t('overtime.minutes', { n: m }) }}</option>
             </select>
 
             <label class="ot-label">{{ isLateMode ? $t('overtime.lateReasonLabel') : $t('overtime.reasonLabel') }}</label>
@@ -111,12 +111,12 @@
               <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
             </select>
 
-            <label class="ot-label">対象現場（複数選択可・責任者へ通知）<span v-if="pastSites.length" class="ot-sel-count">選択 {{ pastSites.length }}件</span></label>
-            <input v-if="siteOptions.length > 6" v-model="pastSiteQuery" type="text" class="ot-input ot-site-search" placeholder="現場名で絞り込み" data-testid="ot-past-site-search" />
+            <label class="ot-label">{{ $t('overtime.targetSitesLabel') }}<span v-if="pastSites.length" class="ot-sel-count">{{ $t('overtime.selectedCount', { n: pastSites.length }) }}</span></label>
+            <input v-if="siteOptions.length > 6" v-model="pastSiteQuery" type="text" class="ot-input ot-site-search" :placeholder="$t('overtime.siteSearchPlaceholder')" data-testid="ot-past-site-search" />
             <div class="ot-sites">
-              <label v-for="s in filteredPastSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="pastSites" /> {{ s }}</label>
-              <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
-              <p v-else-if="!filteredPastSiteOptions.length" class="ot-sites-empty">「{{ pastSiteQuery }}」に一致する現場がありません</p>
+              <label v-for="s in filteredPastSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="pastSites" /> {{ $nm(s) }}</label>
+              <p v-if="!siteOptions.length" class="ot-sites-empty">{{ $t('overtime.noSites') }}</p>
+              <p v-else-if="!filteredPastSiteOptions.length" class="ot-sites-empty">{{ $t('overtime.noSiteMatch', { q: pastSiteQuery }) }}</p>
             </div>
 
             <label class="ot-label">{{ $t('overtime.startTimeLabel') }}</label>
@@ -128,7 +128,7 @@
             <select v-model="pastBreakMinutes" class="ot-input" data-testid="ot-past-break">
               <option value="">{{ $t('overtime.breakNone') }}</option>
               <option value="0">{{ $t('overtime.breakZero') }}</option>
-              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
+              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ $t('overtime.minutes', { n: m }) }}</option>
             </select>
 
             <label class="ot-label">{{ $t('overtime.lateReasonLabel') }}</label>
@@ -148,12 +148,12 @@
               <span v-if="r.requested_start_time" class="ot-end" data-testid="ot-recent-start">{{ (r.requested_start_time || '').slice(0,5) }}〜</span>
               <span v-if="r.requested_end_time" class="ot-end">〜{{ (r.requested_end_time || '').slice(0,5) }}</span>
               <span v-if="r.requested_break_minutes !== null && r.requested_break_minutes !== undefined" class="ot-end" data-testid="ot-recent-break">
-                {{ r.requested_break_minutes === 0 ? $t('overtime.breakZero') : `休憩${r.requested_break_minutes}分` }}
+                {{ r.requested_break_minutes === 0 ? $t('overtime.breakZero') : $t('overtime.breakMinutesShort', { n: r.requested_break_minutes }) }}
               </span>
               <span class="ot-badge" :class="r.status">{{ statusLabel(r.status) }}</span>
               <span v-if="r.is_late" class="ot-badge late" data-testid="ot-recent-late">{{ $t('overtime.lateBadge') }}</span>
               <span v-if="r.reason" class="ot-reason">{{ r.reason }}</span>
-              <span v-if="r.status === 'rejected' && r.decision_note" class="ot-note" data-testid="ot-recent-note">{{ $t('overtime.decisionNote') }}：{{ r.decision_note }}</span>
+              <span v-if="r.status === 'rejected' && r.decision_note" class="ot-note" data-testid="ot-recent-note">{{ $t('overtime.decisionNoteLine', { label: $t('overtime.decisionNote'), note: r.decision_note }) }}</span>
               <!-- ★承認待ちなら日付を問わず取り消せる（2026-09-14 辻さん「休憩申請を間違えた場合の取り消しは？」）。
                    取り消しは本日の枠にしか無く、過去日の実績修正を間違えても消せなかった。EF は元から日付を問わない。 -->
               <button v-if="r.status === 'pending' && overtime.canCancel(r.date, !!r.is_late)" type="button" class="ot-cancel ot-cancel-row" :disabled="busy" :data-testid="`ot-recent-cancel-${r.date}`" @click="onCancelDate(r.date, !!r.is_late)">{{ $t('overtime.cancel') }}</button>
@@ -219,7 +219,8 @@ const pastSites        = ref<string[]>([])
 const pastSiteQuery    = ref('')
 const pastMsg          = ref('')
 const pastMsgOk        = ref(false)
-const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土']
+// 曜日の表示は言語ごと（overtime.weekdays.<key>）。値（日付）は言語に依らない
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 // 昨日から7日ぶん。打刻修正申請（checkin の fixNote「直近7日」）と同じ範囲にそろえる
 const pastDateOptions = computed(() => {
   const out: { value: string; label: string }[] = []
@@ -227,7 +228,7 @@ const pastDateOptions = computed(() => {
   for (let i = 1; i <= 7; i++) {
     const d = new Date(base.getTime() - i * 86400000)
     const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0')
-    out.push({ value: `${y}-${m}-${dd}`, label: `${y}-${m}-${dd}（${WEEKDAYS_JA[d.getDay()]}）` })
+    out.push({ value: `${y}-${m}-${dd}`, label: t('overtime.pastDateOption', { date: `${y}-${m}-${dd}`, weekday: t(`overtime.weekdays.${WEEKDAY_KEYS[d.getDay()]}`) }) })
   }
   return out
 })

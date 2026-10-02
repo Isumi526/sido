@@ -168,22 +168,22 @@
               <div v-else-if="!rep.is_working" class="detail-leave">{{ $t('history.detailNoWork') }}</div>
               <template v-else>
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
-                  <div class="detail-site-name"><span class="material-symbols-rounded detail-icon">location_on</span>{{ s.name }}</div>
-                  <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ s.contractor }}</div>
+                  <div class="detail-site-name"><span class="material-symbols-rounded detail-icon">location_on</span>{{ $nm(s.name) }}</div>
+                  <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ $nm(s.contractor) }}</div>
                   <!-- ★その日その現場の実打刻。表示専用（人件費は日報の作業時刻がマスタ）。
                        打刻が無ければ行ごと出さない＝0:00 のように見せない。 -->
                   <div v-if="punchOf(rep.date, s)" class="detail-punch" data-testid="history-punch">
                     <span class="material-symbols-rounded detail-icon">how_to_reg</span>
                     {{ $t('history.punchLabel') }}
-                    {{ punchOf(rep.date, s)?.checkin ?? '—' }} 〜 {{ punchOf(rep.date, s)?.checkout ?? '—' }}
+                    {{ $t('history.punchRange', { from: punchOf(rep.date, s)?.checkin ?? '—', to: punchOf(rep.date, s)?.checkout ?? '—' }) }}
                   </div>
 
                   <ul v-if="s.workers.length" class="detail-list">
                     <li v-for="(w, wi) in s.workers" :key="wi">
-                      <span class="dl-main">{{ w.name }}</span>
+                      <span class="dl-main">{{ $nm(w.name) }}</span>
                       <span class="dl-sub">
                         <template v-if="w.hours">{{ w.hours }}</template>
-                        <template v-if="w.hours && w.time"> ・ </template>
+                        <template v-if="w.hours && w.time"> {{ $t('history.sep') }} </template>
                         <template v-if="w.time">{{ w.time }}</template>
                         <template v-if="!w.hours && !w.time">—</template>
                       </span>
@@ -221,6 +221,7 @@
 </template>
 
 <script setup lang="ts">
+import { mdWithWeekday } from '~/utils/date-label'
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin } from '~/utils/workerHours'
@@ -393,8 +394,7 @@ onMounted(async () => {
 const unsubmittedDate = ref<string | null>(null)
 const unsubmittedLabel = computed(() => {
   if (!unsubmittedDate.value) return ''
-  const d = new Date(unsubmittedDate.value + 'T00:00:00')
-  return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
+  return mdWithWeekday(unsubmittedDate.value)
 })
 /** 未提出日の全部（古い順）。まとめて提出の対象リスト */
 const unsubmittedAll = ref<string[]>([])

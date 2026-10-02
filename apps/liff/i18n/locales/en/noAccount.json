@@ -1,0 +1,8 @@
+{
+  "title": "Worker information not found",
+  "body1": "You are logged in, but no worker is registered for this account.",
+  "body2": "You need to be registered as a worker to enter daily reports, check in/out and expenses.",
+  "note1": "Please contact the office (administrator)",
+  "note2": "and ask them to register you and issue your login details.",
+  "otherLogin": "Log in with another ID"
+}

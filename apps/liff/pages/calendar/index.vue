@@ -1,6 +1,6 @@
 <template>
   <div class="cal-page">
-    <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav :subtitle="$t('calendar.title')" guide="calendar" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <!-- ★予定追加のお知らせバナーは廃止（2026-08-31）。
          2026-08-30 に「気づく入口はベル1つに集約し、内訳は /notifications のタブで見る」と
@@ -44,7 +44,7 @@
               :class="{ 'my-col': isMyWorker(w.id), 'pinned-col': isPinned(w.id) }"
               @click="togglePin(w.id)"
             >
-              <span class="material-symbols-rounded pin-icon" v-if="isPinned(w.id)">push_pin</span>{{ w.name }}
+              <span class="material-symbols-rounded pin-icon" v-if="isPinned(w.id)">push_pin</span>{{ $nm(w.name) }}
             </th>
           </tr>
         </thead>
@@ -90,7 +90,7 @@
                   :style="chipStyle(s)"
                   @click.stop="openDetail(s)"
                 >
-                  <span class="chip-title">{{ s.title }}</span>
+                  <span class="chip-title">{{ $nm(s.title) }}</span>
                   <span v-if="s.start_time" class="chip-time">{{ chipTimeLabel(s) }}</span>
                 </div>
                 <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
@@ -145,7 +145,7 @@
               :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
               :style="chipStyle(s)"
               @click="openDetail(s)"
-            >{{ s.title }}</div>
+            >{{ $nm(s.title) }}</div>
           </div>
         </div>
 
@@ -167,7 +167,7 @@
                 :style="[chipStyle(s), timedChipStyle(s)]"
                 @click.stop="openDetail(s)"
               >
-                <span class="chip-title">{{ s.title }}</span>
+                <span class="chip-title">{{ $nm(s.title) }}</span>
                 <span class="chip-time">{{ chipTimeLabel(s) }}</span>
               </div>
               <!-- 前日から日跨ぎで続く予定の翌日側（0:00〜終了） -->
@@ -179,7 +179,7 @@
                 :style="[chipStyle(s), timedChipStyle(s, true)]"
                 @click.stop="openDetail(s)"
               >
-                <span class="chip-title">{{ s.title }}</span>
+                <span class="chip-title">{{ $nm(s.title) }}</span>
                 <span class="chip-time">{{ chipTimeLabel(s) }}</span>
               </div>
             </div>
@@ -206,7 +206,7 @@
                   :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
                   :style="chipStyle(s)"
                   @click="openDetail(s)"
-                >{{ s.title }}</div>
+                >{{ $nm(s.title) }}</div>
               </template>
             </div>
           </div>
@@ -247,7 +247,7 @@
               class="worker-chip"
               :class="{ on: selectedWorkerIds.has(w.id) }"
               @click="toggleWorkerSel(w.id)"
-            >{{ w.name }}</button>
+            >{{ $nm(w.name) }}</button>
           </div>
         </div>
 
@@ -271,12 +271,12 @@
               <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
                 <optgroup v-if="recentSiteOptions.length" :label="$t('calendar.siteGroupRecent')" data-testid="site-group-recent">
-                  <option v-for="s in recentSiteOptions" :key="`recent-${s}`" :value="s">{{ s }}</option>
+                  <option v-for="s in recentSiteOptions" :key="`recent-${s}`" :value="s">{{ $nm(s) }}</option>
                 </optgroup>
                 <!-- 予定の現場候補＝見積中（現調）・受注・着工（2026-09-19 A-2・表示マトリクス #14） -->
                 <template v-for="grp in master.siteGroupsFor('schedule_site_picker')" :key="grp.contractorName ?? '__unlinked__'">
                   <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
-                    <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
+                    <option v-for="s in grp.sites" :key="s" :value="s">{{ $nm(s) }}</option>
                   </optgroup>
                 </template>
                 <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
@@ -293,7 +293,7 @@
             <div v-if="workCategoryOptions.length > 1" class="form-row" style="margin-top:8px">
               <span class="form-row-label">{{ $t('calendar.workCategory') }}</span>
               <select v-model="formModal.work_category_id" class="site-select" data-testid="work-category-select">
-                <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
               </select>
             </div>
             <!-- 台帳に無い現場: 名前だけ受け取る（マスタには作らない） -->
@@ -325,7 +325,7 @@
                 class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
                 @click="(formModal as any)._customTitle = name"
                 @keydown.enter.prevent="(formModal as any)._customTitle = name"
-              >{{ name }}</span>{{ i < customSiteSimilar.length - 1 ? '、' : '' }}</template>
+              >{{ $nm(name) }}</span>{{ i < customSiteSimilar.length - 1 ? '、' : '' }}</template>
             </div>
           </template>
 
@@ -333,7 +333,7 @@
           <div v-if="noSiteMode && workCategoryOptions.length > 1" class="form-row" style="margin-top:8px">
             <span class="form-row-label">{{ $t('calendar.workCategory') }}</span>
             <select v-model="formModal.work_category_id" class="site-select" data-testid="work-category-select-nosite">
-              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
             </select>
           </div>
 
@@ -349,9 +349,9 @@
             />
           </div>
           <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
-            <span class="form-row-label">カテゴリ</span>
+            <span class="form-row-label">{{ $t('calendar.catLabel') }}</span>
             <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
-            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage"><span class="material-symbols-rounded btn-icon">settings</span>管理</button>
+            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage"><span class="material-symbols-rounded btn-icon">settings</span>{{ $t('calendar.catManage') }}</button>
             <div class="cat-select-wrap cat-select-wrap--gap">
               <select v-model="formModal.category" class="site-select" data-testid="category-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
@@ -395,7 +395,7 @@
             </label>
           </div>
           <div class="form-row">
-            <span class="form-row-label">他のユーザーに共有</span>
+            <span class="form-row-label">{{ $t('calendar.shareWithOthers') }}</span>
             <label class="ios-toggle">
               <input type="checkbox" v-model="formModal.is_public" @change="isPublicTouched = true" />
               <span class="ios-toggle-track"></span>
@@ -421,15 +421,15 @@
     <div v-if="catManageOpen" class="modal-overlay" @click.self="catManageOpen = false">
       <div class="modal cat-manage">
         <div class="cat-manage-head">
-          <span class="cat-manage-title">カテゴリ設定</span>
-          <button type="button" class="cat-manage-close" @click="catManageOpen = false">閉じる</button>
+          <span class="cat-manage-title">{{ $t('calendar.catSettings') }}</span>
+          <button type="button" class="cat-manage-close" @click="catManageOpen = false">{{ $t('calendar.catClose') }}</button>
         </div>
-        <p class="cat-manage-hint">名前は編集できます。使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます（色は固定）。</p>
+        <p class="cat-manage-hint">{{ $t('calendar.catHint') }}</p>
         <ul class="cat-list">
           <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
             <span class="cat-dot" :style="{ background: c.color }" />
             <input type="text" class="cat-name-input" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
-            <button type="button" class="cat-active-toggle" :class="{ off: !c.active }" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
+            <button type="button" class="cat-active-toggle" :class="{ off: !c.active }" @click="updateCat(c, { active: !c.active })">{{ c.active ? $t('calendar.catShown') : $t('calendar.catHidden') }}</button>
           </li>
         </ul>
       </div>
@@ -439,22 +439,22 @@
     <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
         <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge"><span class="material-symbols-rounded meta-icon">bedtime</span>{{ $t('calendar.nightShift') }}</div>
-        <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
-        <p class="detail-meta"><span class="material-symbols-rounded meta-icon">person</span>{{ detailModal.schedule.worker?.name }}</p>
+        <h2 class="detail-title">{{ $nm(detailModal.schedule.title) }}</h2>
+        <p class="detail-meta"><span class="material-symbols-rounded meta-icon">person</span>{{ $nm(detailModal.schedule.worker?.name) }}</p>
         <!-- ★元請け。「今あの人はどこの元請けの仕事をしているか」を他の作業員が把握したい、
              という要望への答え。入力させるのではなく現場マスタから逆算して出す（2026-08-17） -->
         <p v-if="scheduleContractor(detailModal.schedule)" class="detail-meta">
-          <span class="material-symbols-rounded meta-icon">apartment</span>{{ scheduleContractor(detailModal.schedule) }}
+          <span class="material-symbols-rounded meta-icon">apartment</span>{{ $nm(scheduleContractor(detailModal.schedule)) }}
         </p>
         <p class="detail-meta">
           <span class="material-symbols-rounded meta-icon">calendar_month</span>{{ detailModal.schedule.start_date }}
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
         <p v-if="detailModal.schedule.start_time" class="detail-meta">
-          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ isOvernight(detailModal.schedule) ? '翌' : '' }}{{ detailModal.schedule.end_time?.slice(0, 5) }}
+          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ isOvernight(detailModal.schedule) ? $t('calendar.nextDayPrefix') : '' }}{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
-        <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ detailModal.schedule.created_by_name }}</p>
+        <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ $nm(detailModal.schedule.created_by_name) }}</p>
         <p v-if="detailModal.schedule.deleted_at" class="detail-deleted"><span class="material-symbols-rounded meta-icon">delete</span>{{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
@@ -463,7 +463,7 @@
           <p v-if="!detailModal.edits.length" class="edit-empty">{{ $t('calendar.noEditHistory') }}</p>
           <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
             <div class="edit-header">
-              <span class="edit-who">{{ e.edited_by_name }}</span>
+              <span class="edit-who">{{ $nm(e.edited_by_name) }}</span>
               <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
             </div>
             <ul v-if="Object.keys(e.changes).length" class="edit-changes">
@@ -1020,7 +1020,7 @@ function overnightFromPrevDay(date: string): Schedule[] {
 function chipTimeLabel(s: Schedule): string {
   if (!s.start_time) return ''
   const end = s.end_time ? s.end_time.slice(0, 5) : ''
-  return `${s.start_time.slice(0, 5)}${end ? '–' + (isOvernight(s) ? '翌' : '') + end : ''}`
+  return `${s.start_time.slice(0, 5)}${end ? '–' + (isOvernight(s) ? t('calendar.nextDayPrefix') : '') + end : ''}`
 }
 function scrollWeekTimelineToDefault() {
   const el = weekTimelineScrollRef.value

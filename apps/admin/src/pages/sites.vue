@@ -102,8 +102,8 @@
         </div>
         <div class="grid2">
         <div class="field">
-          <label>読み仮名（50音順の並びに使用）</label>
-          <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
+          <label>読み仮名 <em v-if="kanaRequired" class="req">*</em>（50音順の並び・英語表示のローマ字に使用）</label>
+          <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" data-testid="site-name-kana" />
         </div>
         <!-- ステータス（2026-09-19 A-1）。必須項目はステータスで変わる（見積中は現場名だけ） -->
         <div class="field">
@@ -891,10 +891,19 @@ function normalizeBreaks(breaks: { start: string; minutes: number }[] | null | u
 //  警告だけ出して保存は止めない＝他の項目の編集を妨げない。
 //  ★2026-09-19 A-1: 必須はステータスで変わる（shared/site-status.ts の SITE_REQUIRED_FIELDS が正本）。
 //   見積中・失注＝現場名のみ／受注・着工＝住所・工期開始・責任者／完了＝＋工期終了（実績）。
+/** 新しく登録する現場は、作業員さんの画面に出る段階（受注以降）なら読み仮名も必須（2026-10-02 II-3）。
+ *  英語表示ではこの読み仮名からローマ字で出す。見積中は今どおり現場名だけで保存できる。既存の現場は止めない
+ *  （未入力は「読み仮名の未入力」画面で拾う）。 */
+const kanaRequired = computed(() => {
+  const m = modal.value
+  return !!m && !m.id && !['estimating', 'lost'].includes(m.status ?? SITE_STATUS_DEFAULT_ADMIN)
+})
 const missingFields = computed<string[]>(() => {
   const m = modal.value; if (!m) return []
   const period_end = m.period_end_undecided ? null : m.period_end
-  return missingSiteFields(m.status ?? SITE_STATUS_DEFAULT_ADMIN, { ...m, period_end }).map(f => SITE_REQUIRED_FIELD_LABEL[f])
+  const fields = missingSiteFields(m.status ?? SITE_STATUS_DEFAULT_ADMIN, { ...m, period_end }).map(f => SITE_REQUIRED_FIELD_LABEL[f])
+  if (kanaRequired.value && !(m.name_kana ?? '').trim()) fields.splice(1, 0, '読み仮名')
+  return fields
 })
 function isRequired(f: SiteRequiredField): boolean {
   return SITE_REQUIRED_FIELDS[modal.value?.status ?? SITE_STATUS_DEFAULT_ADMIN].includes(f)

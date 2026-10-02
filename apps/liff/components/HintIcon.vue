@@ -13,7 +13,7 @@
       <div class="hint-mask" @click="close" />
       <div class="hint-pop" role="tooltip" @click.stop>
         <p class="hint-text">{{ text }}</p>
-        <button type="button" class="hint-close" aria-label="閉じる" @click="close">
+        <button type="button" class="hint-close" :aria-label="$t('common.close')" @click="close">
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
         </button>
       </div>
@@ -25,14 +25,16 @@
 // 入力欄の隣に置く小さな「？」アイコン。タップした時だけヒント本文をその場（吹き出し）で表示する。
 // デフォルトはアイコンのみ表示＝ヒント文は非表示（フォームの見た目をすっきりさせる）。
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   text: string     // タップ時に表示するヒント本文
   label?: string   // アクセシビリティ用ラベル（例:「車両」）。省略時は「ヒント」
 }>()
 
+const { t } = useI18n()
 const open = ref(false)
-const ariaLabel = computed(() => `${props.label ?? 'ヒント'}のヒントを表示`)
+const ariaLabel = computed(() => t('common.showHint', { label: props.label ?? t('common.hint') }))
 
 function toggle() { open.value = !open.value }
 function close() { open.value = false }

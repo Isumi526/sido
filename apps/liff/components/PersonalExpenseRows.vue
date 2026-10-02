@@ -41,7 +41,7 @@
         <label class="pe-field">
           <span>{{ $t('personalExpense.account') }}</span>
           <select v-model="row.account_category" class="select" :data-testid="`pe-account-${i}`">
-            <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+            <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ acctLabel(a) }}</option>
           </select>
         </label>
       </div>
@@ -51,7 +51,7 @@
         <span>{{ $t('personalExpense.office') }}</span>
         <select class="select" :value="row.site_id ?? ''" :data-testid="`pe-office-${i}`" @change="onOffice(i, $event)">
           <option value="">{{ $t('personalExpense.officeNone') }}</option>
-          <option v-for="o in offices" :key="o.id" :value="o.id">{{ o.name }}</option>
+          <option v-for="o in offices" :key="o.id" :value="o.id">{{ $nm(o.name) }}</option>
         </select>
       </label>
 
@@ -127,6 +127,8 @@
 import { computed } from 'vue'
 import { EXPENSE_ACCOUNT_OPTIONS } from '~/composables/expense-flatten.gen'
 import type { PersonalExpenseRow } from '~/composables/usePersonalExpenseRows'
+import { personalExpenseAccountKey } from '~/composables/usePersonalExpense'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   rows: PersonalExpenseRow[]
@@ -138,6 +140,12 @@ const props = defineProps<{
   canSubmitBusiness?: boolean
 }>()
 const emit = defineEmits<{ add: []; remove: [index: number] }>()
+
+const { t } = useI18n()
+function acctLabel(account: string): string {
+  const k = personalExpenseAccountKey(account)
+  return k ? t(`personalExpense.accountLabel.${k}`) : account
+}
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 

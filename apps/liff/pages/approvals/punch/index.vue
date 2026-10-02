@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('punchApproval.title')" />
+    <AppNav :subtitle="$t('punchApproval.title')" guide="todo" />
 
     <main class="main">
       <p class="hint">{{ $t('punchApproval.hint') }}</p>
@@ -19,7 +19,7 @@
           <NuxtLink :to="`/approvals/punch/${r.id}`" class="row" data-testid="pca-row">
             <span class="row-body">
               <span class="row-title">
-                {{ r.worker_name || '—' }}
+                {{ $nm(r.worker_name) || '—' }}
                 <span v-if="r.log" class="row-date">{{ fmtDate(r.log.checked_at) }}</span>
               </span>
               <span class="row-change">{{ changeText(r) }}</span>

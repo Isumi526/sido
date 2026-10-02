@@ -86,5 +86,7 @@
   "needManager": "the site manager",
   "needJoin": " and ",
   "expPickup": "Materials taken back {detail}",
-  "expPhotos": "{n} photos"
+  "expPhotos": "{n} photos",
+  "punchRange": "{from} - {to}",
+  "sep": "·"
 }

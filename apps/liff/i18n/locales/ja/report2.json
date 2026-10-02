@@ -1,4 +1,10 @@
 {
   "uploadFailed": "ファイルのアップロードに失敗しました。送信を中止します。\n{errors}",
-  "submitFailed": "送信に失敗しました"
+  "submitFailed": "送信に失敗しました",
+  "receiptErrNetwork": "ネットワークエラーが発生しました",
+  "receiptErrAuth": "認証エラーが発生しました",
+  "receiptErrBusy": "サーバーが混雑しています。しばらく待ってから再試行してください",
+  "receiptErrServer": "サーバーエラーが発生しました",
+  "receiptErrHttp": "通信エラーが発生しました（{status}）",
+  "receiptErrFailed": "解析に失敗しました"
 }

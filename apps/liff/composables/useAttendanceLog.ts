@@ -97,6 +97,8 @@ export function useAttendanceLog() {
     agreedDocumentNames?: string[] | null
     lat?: number | null
     lng?: number | null
+    /** 位置が取れなかった時に書いた理由（2026-10-02 I-2） */
+    locationMissingReason?: string | null
   }): Promise<{ ok: boolean; error?: string }> {
     try {
       await call('punch', input as Record<string, unknown>)

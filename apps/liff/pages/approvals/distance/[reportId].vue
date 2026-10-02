@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('distanceApproval.detailTitle')" />
+    <AppNav :subtitle="$t('distanceApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/distance" class="back" data-testid="dsa-back">
@@ -15,7 +15,7 @@
 
       <template v-else-if="d">
         <div class="who">
-          <span class="name" data-testid="dsa-name">{{ d.report.workerName || '—' }}</span>
+          <span class="name" data-testid="dsa-name">{{ $nm(d.report.workerName) || '—' }}</span>
           <span class="date">{{ fmtDate(d.report.date) }}</span>
         </div>
         <p v-if="d.mine" class="mine" data-testid="dsa-mine">{{ $t('distanceApproval.mine') }}</p>
@@ -30,7 +30,7 @@
             </span>
           </div>
           <dl class="detail">
-            <dt>{{ $t('distanceApproval.site') }}</dt><dd>{{ it.siteName || '—' }}</dd>
+            <dt>{{ $t('distanceApproval.site') }}</dt><dd>{{ $nm(it.siteName) || '—' }}</dd>
             <dt>{{ $t('distanceApproval.vehicle') }}</dt><dd>{{ it.vehicleName || '—' }}</dd>
             <dt>{{ $t('distanceApproval.fieldLabel') }}</dt><dd>{{ $t(`distanceApproval.field.${it.field}`) }}</dd>
             <dt>{{ $t('distanceApproval.km') }}</dt>

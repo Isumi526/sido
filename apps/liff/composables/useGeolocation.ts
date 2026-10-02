@@ -22,12 +22,13 @@ export function useGeolocation() {
   const locatedAt = ref<string | null>(null)
 
   /** 取得を試みる。結果は state に入る。granted なら fix を返す */
-  async function fetch(): Promise<GeoFix | null> {
+  /** timeout: 待つ上限（ms・既定10秒）。出退勤は数秒で諦めて理由の入力へ進む（2026-10-02 I-2） */
+  async function fetch(opts: { timeout?: number } = {}): Promise<GeoFix | null> {
     state.value = 'pending'
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) { state.value = 'retryable'; return null }
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: opts.timeout ?? 10000, maximumAge: 0 })
       })
       lat.value = pos.coords.latitude
       lng.value = pos.coords.longitude

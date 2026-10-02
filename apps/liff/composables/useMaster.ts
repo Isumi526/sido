@@ -336,8 +336,15 @@ export const useMaster = () => {
     return groups
   }
 
+  /** 名前と読み仮名の組（英語表示でローマ字にする・2026-10-02 II-2）。読み仮名がある名前だけ */
+  async function fetchReadings(): Promise<[string, string][]> {
+    const r = await callEf('readings')
+    return Array.isArray(r.readings) ? r.readings : []
+  }
+
   return {
     fetchContractors,
+    fetchReadings,
     master:          readonly(master),
     loading:         readonly(loading),
     fetch,

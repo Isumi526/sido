@@ -3,7 +3,7 @@
     <!-- 代理入力バナー -->
     <div v-if="proxy.isProxyMode.value" class="proxy-banner">
       <span class="material-symbols-rounded proxy-banner-icon">swap_horiz</span>
-      <span class="proxy-banner-text">{{ $t('nav.proxyEditing') }}<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
+      <span class="proxy-banner-text">{{ $t('nav.proxyEditing') }}<strong>{{ $nm(proxy.proxyTarget.value?.name) }}</strong></span>
       <button class="proxy-banner-exit" @click="proxy.clearProxy()">{{ $t('nav.exit') }}</button>
     </div>
     <div ref="navInnerRef" class="app-nav-inner">
@@ -16,6 +16,8 @@
         <span class="app-title">{{ subtitle }}</span>
         <span class="app-brand-name">{{ brandName }}</span>
       </span>
+      <!-- 画面ごとの「使い方」（II-4）。guide を渡した画面だけに出る -->
+      <GuideButton v-if="guide" :guide-key="guide" />
       <slot name="actions" />
       <!-- ★お知らせのベル。全画面のヘッダーに常時出す。
            LINE連携は基本しない／メールも見られない前提なので、アプリを開けば
@@ -54,9 +56,9 @@
         <!-- ユーザー情報 -->
         <div class="drawer-head">
           <div v-if="userName" class="drawer-user">
-            <div class="drawer-avatar">{{ userName.charAt(0) }}</div>
+            <div class="drawer-avatar">{{ $nm(userName).charAt(0) }}</div>
             <div>
-              <div class="drawer-name">{{ userName }}</div>
+              <div class="drawer-name">{{ $nm(userName) }}</div>
               <div class="drawer-role">{{ roleLabel }}</div>
             </div>
           </div>
@@ -156,9 +158,9 @@
               :class="{ selected: proxy.proxyTarget.value?.id === w.id }"
               @click="selectProxy(w)"
             >
-              <div class="drawer-proxy-avatar">{{ w.name.charAt(0) }}</div>
+              <div class="drawer-proxy-avatar">{{ $nm(w.name).charAt(0) }}</div>
               <div class="drawer-proxy-info">
-                <div class="drawer-proxy-name">{{ w.name }}</div>
+                <div class="drawer-proxy-name">{{ $nm(w.name) }}</div>
                 <div class="drawer-proxy-role">{{ w.worker_role === 'factory' ? $t('common.roleFactory') : $t('common.roleSite') }}</div>
               </div>
               <span v-if="proxy.proxyTarget.value?.id === w.id" class="material-symbols-rounded drawer-proxy-check">check_circle</span>
@@ -194,6 +196,7 @@ const props = defineProps<{
   userRole?: 'factory' | 'site'
   unreadBadge?: number   // 戻るアイコンに表示する未読件数バッジ(現場チャット等・任意)
   titleAlign?: 'center' | 'left'   // タイトルの寄せ(既定center・現場チャットのみLINE風に左詰め)
+  guide?: string   // 「使い方」の鍵（shared/worker-guides.ts の key）。渡した画面だけ見出しの横に出る（II-4）
 }>()
 
 const { t } = useI18n()

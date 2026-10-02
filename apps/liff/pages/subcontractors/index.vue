@@ -12,7 +12,7 @@
         <div class="filter-row">
           <select v-model="filterTrade" class="filter-select">
             <option value="">{{ $t('subcontractors.tradeAll') }}</option>
-            <option v-for="t in tradeOptions" :key="t" :value="t">{{ t }}</option>
+            <option v-for="t in tradeOptions" :key="t" :value="t">{{ tradeLabel(t) }}</option>
           </select>
           <input v-model="filterArea" class="filter-area" :placeholder="$t('subcontractors.areaPlaceholder')" />
         </div>
@@ -30,12 +30,12 @@
         <div v-if="!filtered.length" class="empty">{{ $t('subcontractors.noResults') }}</div>
         <div v-for="s in filtered" :key="s.id" class="sub-card" @click="openDetail(s)">
           <div class="sub-card-head">
-            <div class="sub-name">{{ s.name }}</div>
-            <span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : s.category === 'その他' ? 'other' : 'gyosha'">{{ s.category }}</span>
+            <div class="sub-name">{{ $nm(s.name) }}</div>
+            <span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : s.category === 'その他' ? 'other' : 'gyosha'">{{ categoryLabel(s.category) }}</span>
           </div>
           <div v-if="s.representative_name" class="sub-rep">{{ s.representative_name }}</div>
           <div v-if="s.trade_types.length || s.service_areas.length" class="sub-chips">
-            <span v-for="t in s.trade_types" :key="'t'+t" class="chip">{{ t }}</span>
+            <span v-for="t in s.trade_types" :key="'t'+t" class="chip">{{ tradeLabel(t) }}</span>
             <span v-for="a in s.service_areas" :key="'a'+a" class="chip area">{{ a }}</span>
           </div>
           <span class="material-symbols-rounded sub-arrow">chevron_right</span>
@@ -47,14 +47,14 @@
     <div v-if="detail" class="overlay" @click.self="closeDetail">
       <div class="sheet">
         <div class="sheet-head">
-          <h2>{{ detail.name }}</h2>
+          <h2>{{ $nm(detail.name) }}</h2>
           <button class="sheet-close" @click="closeDetail">✕</button>
         </div>
         <div class="sheet-body">
           <!-- 基本情報 -->
           <div v-if="detail.category" class="detail-row">
             <span class="detail-label">{{ $t('subcontractors.labelCategory') }}</span>
-            <span class="cat-badge" :class="detail.category === '商社' ? 'shosha' : detail.category === 'その他' ? 'other' : 'gyosha'">{{ detail.category }}</span>
+            <span class="cat-badge" :class="detail.category === '商社' ? 'shosha' : detail.category === 'その他' ? 'other' : 'gyosha'">{{ categoryLabel(detail.category) }}</span>
           </div>
           <div v-if="detail.representative_name" class="detail-row">
             <span class="detail-label">{{ $t('subcontractors.labelRep') }}</span>
@@ -85,7 +85,7 @@
           <div v-if="detail.trade_types.length" class="detail-block">
             <span class="detail-label">{{ $t('subcontractors.labelTrades') }}</span>
             <div class="chips-wrap">
-              <span v-for="t in detail.trade_types" :key="t" class="chip">{{ t }}</span>
+              <span v-for="t in detail.trade_types" :key="t" class="chip">{{ tradeLabel(t) }}</span>
             </div>
           </div>
           <div v-if="detail.service_areas.length" class="detail-block">
@@ -108,7 +108,7 @@
             <template v-else>
               <div v-for="c in comments" :key="c.id" class="comment">
                 <div class="comment-head">
-                  <span class="comment-author">{{ workerName(c.worker_id) }}</span>
+                  <span class="comment-author">{{ $nm(workerName(c.worker_id)) }}</span>
                   <span class="comment-date">{{ fmtDate(c.created_at) }}</span>
                 </div>
                 <template v-if="editingCommentId === c.id">
@@ -196,10 +196,10 @@
                 v-for="p in presets" :key="p.id" type="button"
                 class="preset-btn" :class="{ on: modal.trade_types.includes(p.name) }"
                 @click="toggleTrade(p.name)"
-              >{{ p.name }}</button>
+              >{{ tradeLabel(p.name) }}</button>
             </div>
             <div class="chips-input">
-              <span v-for="t in customTrades" :key="t" class="chip">{{ t }}<button class="chip-x" @click="removeTrade(t)">×</button></span>
+              <span v-for="t in customTrades" :key="t" class="chip">{{ tradeLabel(t) }}<button class="chip-x" @click="removeTrade(t)">×</button></span>
               <input v-model="tradeDraft" class="chip-add" :placeholder="$t('subcontractors.tradeCustomPlaceholder')" @keydown.enter.prevent="addCustomTrade" />
             </div>
           </div>
@@ -335,6 +335,22 @@ const filtered = computed(() => {
 
 const customTrades = computed(() => (modal.value?.trade_types ?? []).filter((t) => !presets.value.some((p) => p.name === t)))
 
+// 工種・区分は日本語のまま保存される。表示だけ言語に合わせる（既定セット以外＝各社が足した工種はそのまま出す）
+const TRADE_KEYS: Record<string, string> = {
+  '軽鉄（LGS）工事': 'tradeLgs', 'ボード工事': 'tradeBoard', '木工・造作工事': 'tradeCarpentry', '左官工事': 'tradePlaster',
+  'クロス（壁紙）工事': 'tradeWallpaper', '塗装工事': 'tradePaint', '床仕上げ工事': 'tradeFloor', '木製・金属製建具工事': 'tradeFittings',
+  '電気設備工事': 'tradeElectric', '空調・換気設備工事': 'tradeHvac', '給排水衛生設備工事': 'tradePlumbing', 'その他': 'tradeOther',
+}
+function tradeLabel(v: string): string {
+  const k = TRADE_KEYS[v]
+  return k ? t(`subcontractors.${k}`) : v
+}
+const CATEGORY_KEYS: Record<string, string> = { '業者': 'categoryGyosha', '商社': 'categoryShosha', 'その他': 'categoryOther' }
+function categoryLabel(v: string | null): string {
+  if (!v) return ''
+  const k = CATEGORY_KEYS[v]
+  return k ? t(`subcontractors.${k}`) : v
+}
 function workerName(id: string | null) { return (id && workersMap.value[id]) || t('subcontractors.defaultWorker') }
 function fmtDate(s: string) {
   const d = new Date(s)

@@ -88,8 +88,6 @@ test('★退勤したら完了画面を挟まず日報画面へ直行する', as
   // 共通の確認ルールが登録されていると全チェックまで送信できない。ここの主題ではないので全部押す
   const rules = page.locator('.rule-row')
   for (let i = 0, n = await rules.count(); i < n; i++) await rules.nth(i).click()
-  // 位置情報は明示タップで取得する設計（iOS LINEは自動要求だと無言で拒否されるため）
-  await page.locator('.loc-get').first().click()
   const submit = page.getByRole('button', { name: '退勤を記録する' }).last()
   await expect(submit).toBeEnabled({ timeout: 20000 })
   await submit.click()

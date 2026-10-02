@@ -11,7 +11,7 @@
         <ul class="list">
           <li v-for="s in visibleSites" :key="s.id" class="row" :class="{ off: !s.active }" :data-testid="`site-row-${s.id}`" @click="navigateTo(`/sites/${s.id}`)">
             <div class="row-main">
-              <div class="row-name">{{ s.name }}<span class="badge-st" :class="`st-${s.status}`">{{ statusLabel(s.status) }}</span></div>
+              <div class="row-name">{{ $nm(s.name) }}<span class="badge-st" :class="`st-${s.status}`">{{ statusLabel(s.status) }}</span></div>
               <div v-if="s.location" class="row-sub">{{ s.location }}</div>
             </div>
           </li>

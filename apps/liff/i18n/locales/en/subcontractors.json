@@ -34,5 +34,17 @@
   "confirmDelete": "Delete \"{name}\"? (An administrator can restore it.)",
   "confirmDeleteComment": "Delete this comment?",
   "errorNameRequired": "Please enter a company name",
-  "errorSaveFailed": "Failed to save"
+  "errorSaveFailed": "Failed to save",
+  "tradeLgs": "Light steel framing (LGS)",
+  "tradeBoard": "Drywall (board)",
+  "tradeCarpentry": "Carpentry",
+  "tradePlaster": "Plastering",
+  "tradeWallpaper": "Wallpaper",
+  "tradePaint": "Painting",
+  "tradeFloor": "Flooring",
+  "tradeFittings": "Doors and fittings (wood / metal)",
+  "tradeElectric": "Electrical",
+  "tradeHvac": "Air conditioning / ventilation",
+  "tradePlumbing": "Plumbing",
+  "tradeOther": "Other"
 }

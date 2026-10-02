@@ -101,7 +101,7 @@ const dateOptions = computed(() =>
   Array.from({ length: LATE_MAX_DAYS + 1 }, (_, i) => {
     const value = jstDay(i)
     const [, m, d] = value.split('-')
-    return { value, label: i === 0 ? `${Number(m)}/${Number(d)}（今日）` : `${Number(m)}/${Number(d)}` }
+    return { value, label: i === 0 ? t('checkin.lateToday', { md: `${Number(m)}/${Number(d)}` }) : `${Number(m)}/${Number(d)}` }
   }))
 
 function openPanel() {

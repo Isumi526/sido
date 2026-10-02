@@ -2,15 +2,15 @@
   <div class="na-wrap">
     <div class="na-card" data-testid="no-account">
       <span class="material-symbols-outlined na-icon">person_off</span>
-      <h1 class="na-title">作業員情報が見つかりません</h1>
+      <h1 class="na-title">{{ $t('noAccount.title') }}</h1>
       <p class="na-body">
-        ログインはできていますが、このアカウントに紐づく作業員が登録されていません。
-        日報・打刻・経費の入力には作業員の登録が必要です。
+        {{ $t('noAccount.body1') }}
+        {{ $t('noAccount.body2') }}
       </p>
       <p class="na-body na-note">
-        お手数ですが、管理者（事務所）に連絡して<br>作業員の登録とログイン情報の発行を依頼してください。
+        {{ $t('noAccount.note1') }}<br>{{ $t('noAccount.note2') }}
       </p>
-      <NuxtLink to="/login" class="na-btn" data-testid="no-account-login">別のIDでログインする</NuxtLink>
+      <NuxtLink to="/login" class="na-btn" data-testid="no-account-login">{{ $t('noAccount.otherLogin') }}</NuxtLink>
     </div>
   </div>
 </template>

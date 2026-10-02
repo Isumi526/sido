@@ -9,6 +9,9 @@
 import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
+// 位置は記録ボタンで一緒に取る（2026-10-02 I-2）。取れない端末の動きは liff.checkin-one-tap が見る
+test.use({ geolocation: { latitude: 35.6812, longitude: 139.7671 }, permissions: ['geolocation'] })
+
 const TS = Date.now()
 const RULE_COMMON = `E2E共通_${TS}`
 const RULE_SITE   = `E2E現場だけ_ヘルメット_${TS}`
@@ -105,7 +108,6 @@ test('★選んだ区分が打刻に残り、退勤時はその区分が既定�
   const rows = page.locator('.rule-row')
   const n = await rows.count()
   for (let i = 0; i < n; i++) await rows.nth(i).click()
-  await page.locator('.loc-get').first().click()
   const submit = page.getByRole('button', { name: '出勤を記録する' }).last()
   await expect(submit).toBeEnabled({ timeout: 20000 })
   await submit.click()
@@ -149,7 +151,7 @@ test('★確認事項ゼロの区分を選んでも、留まって「次へ」�
     await expect(picker, '★区分をそのまま選び直せる').toBeVisible()
     await expect(page.locator('.rule-row')).toHaveCount(0)
     await page.getByTestId('step-next').click()
-    await expect(page.getByTestId('location-step')).toBeVisible()
+    await expect(page.getByTestId('punch-submit'), '記録の画面へ進む（現在地のステップは無い・I-2）').toBeVisible()
 
     // 進んだ後も「区分：○○」の行から戻れる
     const done = page.getByTestId('step-done-rules')

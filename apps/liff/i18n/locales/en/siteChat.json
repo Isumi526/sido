@@ -14,5 +14,9 @@
   "copy": "Copy",
   "replyClear": "Cancel reply",
   "today": "Today",
-  "yesterday": "Yesterday"
+  "yesterday": "Yesterday",
+  "dropToAttach": "Drop here to attach",
+  "fileFallback": "File",
+  "fileTooLarge": "The file is too large (max {max})",
+  "mentionAll": "@ALL (everyone)"
 }

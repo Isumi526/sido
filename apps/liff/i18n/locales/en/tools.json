@@ -59,5 +59,7 @@
   "sinceDays": "for {n} days",
   "indexHint": "Scan a tool or storage QR to take out / return. Here you can see where tools are now.",
   "allOutTools": "Tools others have out ({n})",
-  "allOutToolsEmpty": "No tools are out"
+  "allOutToolsEmpty": "No tools are out",
+  "kindParen": " ({kind})",
+  "sep": " · "
 }

@@ -169,6 +169,10 @@ async function processAccount(
     if (p.report_user_id && p.report_date) submittedSet.add(`${p.report_user_id}__${p.report_date}`)
   }
 
+  // ★休み・有給の予定の日（終日）と毎週の定休は未送信に数えない（2026-10-02 I-3）。
+  //  その日は夜に日報が自動で出る。ただしその日に出勤の打刻がある＝働いた日は数える（日報が要る）。
+  const offSet = await fetchDaysOff(supabase, accountId, startDate, yesterday, allDates)
+
   const workerNameMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.name])
   )
@@ -220,7 +224,7 @@ async function processAccount(
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
     const us = personStart((workerId && workerCreatedMap.get(workerId)) || (user as any).created_at, workerId ? workerReportStartMap.get(workerId) : null)
-    const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
+    const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`) && !(workerId && offSet.has(`${workerId}__${d}`)))
     if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }
 
@@ -228,7 +232,7 @@ async function processAccount(
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
       const ws = personStart((worker as any).created_at, (worker as any).report_start_date)
-      const dates = allDates.filter(d => d >= ws)
+      const dates = allDates.filter(d => d >= ws && !offSet.has(`${worker.id}__${d}`))
       if (dates.length === 0) continue
       const entry = buildEntry(worker.name, worker.id)
       unsubmitted.push({ ...entry, dates })
@@ -381,3 +385,32 @@ Deno.serve(async (req) => {
     return json({ error: String(e) }, 500)
   }
 })
+
+/**
+ * 休み・有給の予定（終日）と毎週の定休にあたる「worker_id__日付」の集合（I-3）。
+ * その日に出勤の打刻があれば入れない（休みの予定だったが出勤した日は日報が要る）。
+ */
+async function fetchDaysOff(svc: any, accountId: string, from: string, to: string, dates: string[]): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (!dates.length) return out
+  const [{ data: sched }, { data: weekly }] = await Promise.all([
+    svc.from('schedules').select('worker_id, start_date, end_date')
+      .eq('account_id', accountId).in('category', ['off', 'paid_leave']).eq('all_day', true).is('deleted_at', null)
+      .lte('start_date', to).gte('end_date', from),
+    svc.from('worker_weekly_days_off').select('worker_id, weekday').eq('account_id', accountId),
+  ])
+  for (const s of (sched ?? []) as any[]) {
+    for (const d of dates) if (s.worker_id && d >= s.start_date && d <= s.end_date) out.add(`${s.worker_id}__${d}`)
+  }
+  for (const w of (weekly ?? []) as any[]) {
+    for (const d of dates) if (new Date(`${d}T00:00:00Z`).getUTCDay() === Number(w.weekday)) out.add(`${w.worker_id}__${d}`)
+  }
+  const ids = [...new Set([...out].map((k) => k.split('__')[0]))]
+  if (!ids.length) return out
+  const { data: punches } = await svc.from('attendance_logs').select('worker_id, checked_at')
+    .in('worker_id', ids).eq('type', 'checkin').is('deleted_at', null)
+    .gte('checked_at', new Date(`${from}T00:00:00+09:00`).toISOString())
+    .lt('checked_at', new Date(new Date(`${to}T00:00:00+09:00`).getTime() + 86400000).toISOString())
+  for (const p of (punches ?? []) as any[]) out.delete(`${p.worker_id}__${jstDateOf(p.checked_at)}`)
+  return out
+}
