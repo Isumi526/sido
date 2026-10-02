@@ -5200,7 +5200,8 @@ html, body {
 .bulk-grid .select, .bulk-grid .input { width: 100%; box-sizing: border-box; min-width: 0; }
 .bulk-note { margin: 0; font-size: 12px; line-height: 1.6; color: #6b7280; align-self: end; }
 .bulk-warn { margin: 6px 0 0; font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 6px; padding: 6px 8px; }
-.bulk-actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 12px; }
+.bulk-actions { display: flex; flex-direction: column-reverse; gap: 8px; margin-top: 12px; }
+.bulk-actions > button { width: 100%; }
 .bulk-apply { height: 44px; padding: 0 16px; border: none; border-radius: 12px; background: #06C755; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
 .bulk-apply:disabled { opacity: .4; cursor: default; }
 .bulk-msg { margin: 8px 0 0; font-size: 13px; color: #15803d; }
