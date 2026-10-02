@@ -16,6 +16,8 @@
         <span class="app-title">{{ subtitle }}</span>
         <span class="app-brand-name">{{ brandName }}</span>
       </span>
+      <!-- 画面ごとの「使い方」（II-4）。guide を渡した画面だけに出る -->
+      <GuideButton v-if="guide" :guide-key="guide" />
       <slot name="actions" />
       <!-- ★お知らせのベル。全画面のヘッダーに常時出す。
            LINE連携は基本しない／メールも見られない前提なので、アプリを開けば
@@ -178,6 +180,7 @@ const props = defineProps<{
   userRole?: 'factory' | 'site'
   unreadBadge?: number   // 戻るアイコンに表示する未読件数バッジ(現場チャット等・任意)
   titleAlign?: 'center' | 'left'   // タイトルの寄せ(既定center・現場チャットのみLINE風に左詰め)
+  guide?: string   // 「使い方」の鍵（shared/worker-guides.ts の key）。渡した画面だけ見出しの横に出る（II-4）
 }>()
 
 const { t } = useI18n()

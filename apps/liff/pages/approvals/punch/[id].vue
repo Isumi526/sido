@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('punchApproval.detailTitle')" />
+    <AppNav :subtitle="$t('punchApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/punch" class="back" data-testid="pca-back">

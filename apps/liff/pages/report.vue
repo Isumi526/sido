@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <ReportOnboarding ref="onboardingRef" />
-    <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="$t('report.subtitle')" guide="report" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
     <button type="button" class="ob-replay" @click="onboardingRef?.open()"><span class="material-symbols-rounded ob-replay-icon">help</span>{{ $t('onboarding.replay') }}</button>
 
     <!-- ★退勤打刻から直行してきた時の手応え。完了画面を挟むとそこで離脱する人がいるので

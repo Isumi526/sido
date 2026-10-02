@@ -1,6 +1,6 @@
 <template>
   <div>
-    <AppNav :subtitle="$t('nav.checkin')" />
+    <AppNav :subtitle="$t('nav.checkin')" guide="checkin" />
     <div class="checkin-page">
 
     <!-- ローディング -->

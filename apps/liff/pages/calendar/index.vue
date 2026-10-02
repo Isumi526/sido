@@ -1,6 +1,6 @@
 <template>
   <div class="cal-page">
-    <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav :subtitle="$t('calendar.title')" guide="calendar" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <!-- ★予定追加のお知らせバナーは廃止（2026-08-31）。
          2026-08-30 に「気づく入口はベル1つに集約し、内訳は /notifications のタブで見る」と

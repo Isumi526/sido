@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('notifications.subtitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
+    <AppNav :subtitle="$t('notifications.subtitle')" guide="todo" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
       <!-- 通知の設定（この端末のオン/オフ・受け取る種類）は設定ページへ（A-1・2026-09-27） -->

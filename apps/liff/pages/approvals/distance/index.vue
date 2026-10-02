@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('distanceApproval.title')" />
+    <AppNav :subtitle="$t('distanceApproval.title')" guide="todo" />
 
     <main class="main">
       <p class="hint">{{ $t('distanceApproval.hint') }}</p>

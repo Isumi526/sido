@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('overtimeApproval.detailTitle')" />
+    <AppNav :subtitle="$t('overtimeApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/overtime" class="back" data-testid="ota-back">

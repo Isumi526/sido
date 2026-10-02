@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('distanceApproval.detailTitle')" />
+    <AppNav :subtitle="$t('distanceApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/distance" class="back" data-testid="dsa-back">

@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('reportApproval.detailTitle')" />
+    <AppNav :subtitle="$t('reportApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/reports" class="back" data-testid="rpa-back">
