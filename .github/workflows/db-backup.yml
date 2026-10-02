@@ -6,7 +6,7 @@
 #  DB は 49MB（2026-09-20 実測）なので pg_dump 日次×30日でも Cloudflare R2 の無料枠（10GB）に収まる。
 #
 #  やること: pg_dump（custom形式・圧縮）→ 整合性検査（pg_restore --list）→ R2 へ保存
-#            → ライフサイクル（31日で自動削除）を毎回セット（冪等）→ 月1回は空のPostgresへ復元テスト。
+#            → ライフサイクル（30日で自動削除）を毎回セット（冪等）→ 月1回は空のPostgresへ復元テスト。
 #  秘密: SUPABASE_PROD_DB_URL（pooler 経由・prod-health と同じ）／R2_ACCOUNT_ID／R2_BUCKET／
 #        R2_ACCESS_KEY_ID／R2_SECRET_ACCESS_KEY（バケット限定・オブジェクト読み書き）
 #  復元手順: docs/data-backup.md
@@ -102,7 +102,8 @@ jobs:
           [ "$remote" = "$local_size" ] || { echo "::error::R2 上のサイズが一致しない（$remote != $local_size）"; exit 1; }
           echo "saved: daily/$KEY ($remote bytes)"
 
-      - name: 保持期間（31日で自動削除）を毎回セット（冪等）
+      - name: 保持期間（30日で自動削除）を毎回セット（冪等）
+        # ★契約（別紙2 第10項・作業員の同意文）の「取得日から30日間保存した後、自動で削除」に揃える（2026-10-02。以前は31日）
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -113,14 +114,14 @@ jobs:
         run: |
           set -euo pipefail
           cat > lifecycle.json <<'JSON'
-          {"Rules":[{"ID":"expire-daily-31d","Status":"Enabled","Filter":{"Prefix":"daily/"},"Expiration":{"Days":31}}]}
+          {"Rules":[{"ID":"expire-daily-30d","Status":"Enabled","Filter":{"Prefix":"daily/"},"Expiration":{"Days":30}}]}
           JSON
           if aws s3api put-bucket-lifecycle-configuration --bucket "$R2_BUCKET" --lifecycle-configuration file://lifecycle.json --endpoint-url "$R2_ENDPOINT"; then
             echo "lifecycle set"
           else
-            # トークンにライフサイクル権限が無い場合は自前で掃除する（31日超の daily/ を削除）
-            echo "::warning::lifecycle をセットできない（トークン権限）。自前で 31 日超を削除する"
-            cutoff=$(date -u -d '31 days ago' +%Y-%m-%dT%H:%M:%SZ)
+            # トークンにライフサイクル権限が無い場合は自前で掃除する（30日超の daily/ を削除）
+            echo "::warning::lifecycle をセットできない（トークン権限）。自前で 30 日超を削除する"
+            cutoff=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
             aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix daily/ --endpoint-url "$R2_ENDPOINT" \
               --query "Contents[?LastModified<'$cutoff'].Key" --output text | tr '\t' '\n' | grep -v '^None$' | while read -r k; do
                 [ -n "$k" ] && aws s3 rm "s3://$R2_BUCKET/$k" --endpoint-url "$R2_ENDPOINT" --only-show-errors && echo "deleted $k"
