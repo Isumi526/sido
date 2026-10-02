@@ -321,5 +321,6 @@
   "bulkDateWarn": "The receipt date ({date}) is different from the report date. Please check it.",
   "bulkAddManual": "+ Add without receipt",
   "bulkApply": "Add all ({n})",
-  "bulkApplied": "Added {n}. Please check them in the expenses for each site below."
+  "bulkApplied": "Added {n}. Please check them in the expenses for each site below.",
+  "pickupToInventory": "Also register it in inventory as brought back (opens another screen)"
 }

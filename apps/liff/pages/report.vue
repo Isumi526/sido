@@ -999,6 +999,8 @@
                   <AttachedFilesBadge :files="site.expenses.pickupPhotos" @remove-file="(p) => site.expenses.pickupPhotos?.splice(p.index, 1)" />
                   <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handlePickupPhoto(si, e)" />
                 </div>
+                <!-- 在庫の機能を使っている会社は、引き上げた材料を在庫にも登録できる（在庫①の引き上げ登録へ） -->
+                <NuxtLink v-if="isLiffFeatureEnabled('inventory')" to="/inventory" class="btn-ghost-sm mt8" :data-testid="`step-pickup-inventory-${si}`">{{ $t('report.pickupToInventory') }}</NuxtLink>
               </template>
             </Field>
           </template>
