@@ -5,7 +5,7 @@
 //  ★守ること:
 //   1. 英語表示では、現場名・業者名・作業区分・作業員名を読み仮名からローマ字で出す（山田内装 → Yamada Naisou）
 //   2. 読み仮名が無い名前は日本語のまま（AI の仮は使わない＝確認事項5=A）
-//   3. 表示だけ変える。選んで保存する値は日本語の名前のまま
+//   3. 表示だけ変える。選ぶ値（保存に使う値）は変わらない
 //   4. 日本語表示は今のまま
 //   5. 英語表示で、主な画面に日本語の固定文言が残っていない
 // ============================================================
@@ -42,7 +42,7 @@ test.beforeAll(async () => {
       { account_id: accountId, name: SITE_NO_KANA, name_kana: null, active: true, status: 'in_progress' },
     ]),
   })
-  siteIds = rows.map((r: any) => r.id)
+  siteIds = [rows.find((r: any) => r.name === SITE).id, rows.find((r: any) => r.name === SITE_NO_KANA).id]
 })
 test.afterAll(async () => {
   if (siteIds.length) await restSrv(`sites?id=in.(${siteIds.join(',')})`, { method: 'DELETE' }).catch(() => {})
@@ -58,27 +58,23 @@ async function setLocale(page: import('@playwright/test').Page, l: 'ja' | 'en') 
   }, l)
 }
 
-test('★英語表示: 日報の現場の選択肢が読み仮名からローマ字になり、選んだ値は日本語の名前のまま', async ({ page }) => {
+// ★日報の画面は他のテストが今日の日報を出していると「送信済み」になり選択肢が出ないので、
+//  いつも現場の一覧が出る経費申請の「紐付け先」で見る（同じ $nm を通る）
+test('★英語表示: 現場の選択肢が読み仮名からローマ字になり、選ぶ値は変わらない', async ({ page }) => {
   await setLocale(page, 'en')
-  await page.goto('/report', { waitUntil: 'networkidle' })
-  const select = page.getByTestId('site-select-0')
+  await page.goto('/expense/personal', { waitUntil: 'networkidle' })
+  const select = page.getByTestId('pe-site')
   await expect(select).toBeVisible({ timeout: 20000 })
-  const opt = select.locator('option', { hasText: 'Yamada Naisou' })
-  await expect(opt, '読み仮名のある現場はローマ字').toHaveCount(1, { timeout: 15000 })
-  await expect(opt).toHaveAttribute('value', SITE)
-  await expect(select.locator(`option[value="${SITE_NO_KANA}"]`), '読み仮名の無い現場は日本語のまま').toHaveText(SITE_NO_KANA)
-
-  await select.selectOption(SITE)
-  expect(await select.inputValue(), '保存に使う値は日本語の名前').toBe(SITE)
+  await expect(select.locator(`option[value="${siteIds[0]}"]`), '読み仮名のある現場はローマ字').toHaveText('Yamada Naisou', { timeout: 15000 })
+  await expect(select.locator(`option[value="${siteIds[1]}"]`), '読み仮名の無い現場は日本語のまま').toHaveText(SITE_NO_KANA)
 })
 
 test('★日本語表示は今のまま（ローマ字にしない）', async ({ page }) => {
   await setLocale(page, 'ja')
-  await page.goto('/report', { waitUntil: 'networkidle' })
-  const select = page.getByTestId('site-select-0')
+  await page.goto('/expense/personal', { waitUntil: 'networkidle' })
+  const select = page.getByTestId('pe-site')
   await expect(select).toBeVisible({ timeout: 20000 })
-  await expect(select.locator(`option[value="${SITE}"]`)).toHaveText(SITE)
-  await expect(select.locator('option', { hasText: 'Yamada Naisou' })).toHaveCount(0)
+  await expect(select.locator(`option[value="${siteIds[0]}"]`)).toHaveText(SITE)
 })
 
 test('★英語表示で、主な画面に日本語の固定文言が残っていない', async ({ page }) => {
