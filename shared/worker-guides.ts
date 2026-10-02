@@ -168,6 +168,48 @@ export const WORKER_GUIDES: WorkerGuide[] = [
     ],
   },
   {
+    key: 'daysOff',
+    title: { ja: '休み・有給の予定', en: 'Days off and paid leave' },
+    summary: {
+      ja: '休みと有給を先に入れておくと、その日の日報が自動で出ます。',
+      en: 'Enter your days off and paid leave in advance, and the daily report for that day is sent automatically.',
+    },
+    sections: [
+      {
+        heading: { ja: '入れ方', en: 'How to enter' },
+        steps: {
+          ja: [
+            '毎週休む曜日があれば、「毎週の定休」でその曜日を押します（もう一度押すと外れます）。',
+            '決まった日の休み・有給は、「休み・有給を入れる」で日付を選び、「休み」か「有給」を選んで「入れる」を押します。今日より前の日・日報をもう出した日は入れられません。',
+            '入れた予定は「これからの休み・有給」に出ます。やめる時は「消す」を押します。予定表にも出ます。',
+          ],
+          en: [
+            'If you are off on the same day every week, tap that day in "Weekly day off" (tap again to remove).',
+            'For a specific day, choose the date in "Add a day off or paid leave", choose "Day off" or "Paid leave", and tap "Add". You cannot enter days before today or days you already sent a report for.',
+            'Your entries appear in "Upcoming days off and paid leave". Tap "Remove" to cancel one. They also appear in the schedule.',
+          ],
+        },
+      },
+      {
+        heading: { ja: 'その日の日報', en: 'The daily report for that day' },
+        steps: {
+          ja: [
+            'その日の夜8時に、日報が「稼働なし」（有給は「有給」）で自動で出ます。',
+            'その日に出勤の打刻をした時は出ません（いつもどおり日報を書いてください）。',
+            '有給の残りが足りない日は自動では出ません。その日に日報の画面から有給で出してください（管理者の承認に回ります）。',
+            '出た日報の直し方は、いつもの日報と同じです。',
+          ],
+          en: [
+            'At 8 pm on that day, the daily report is sent automatically as "Not working" (or "Paid leave").',
+            'If you checked in that day, it is not sent (write your daily report as usual).',
+            'If you do not have enough paid leave left, it is not sent automatically. Send it from the daily report screen as paid leave on that day (it goes to the manager for approval).',
+            'You can correct it the same way as any daily report.',
+          ],
+        },
+      },
+    ],
+  },
+  {
     key: 'calendar',
     title: { ja: '予定', en: 'Schedule' },
     summary: {
