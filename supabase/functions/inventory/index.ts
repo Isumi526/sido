@@ -38,6 +38,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
 import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from '../_shared/features-registry.gen.ts'
+import { pushInventoryPending } from '../_shared/management-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -323,7 +324,11 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
         created_by_worker_id: caller.workerId, created_by_name: caller.name, client_request_id: clientRequestId,
       }).select('id').maybeSingle()
       if (error) { console.error('[inventory] pending insert failed:', error); return json({ ok: false, error: 'save_failed', detail: error.message }, 500) }
-      return json({ ok: true, pending: true, pendingId: (pend as any)?.id ?? null })
+      // 管理者・役員/経理へ「在庫の確認待ち」を通知（A-5・best-effort）。再送（deduped）は上で返しているので二重に送らない
+      const push = (pend as any)?.id
+        ? await pushInventoryPending(svc, accountId, { pendingId: (pend as any).id, workerId: caller.workerId, workerName: caller.name, kind, qty })
+        : null
+      return json({ ok: true, pending: true, pendingId: (pend as any)?.id ?? null, push: push ? { targets: push.targets, sent: push.sent, skipped: push.skipped ?? null } : null })
     }
 
     const delta = kind === 'out' ? -qty : qty

@@ -93,6 +93,28 @@
               <span class="material-symbols-rounded notif-chev">chevron_right</span>
             </NuxtLink>
           </li>
+          <!-- 経費精算の申請・在庫の確認待ち（管理者・役員/経理だけ）: 処理は管理画面（確認事項#2=A）。
+               同じドメインの /admin/... を開く＝ログインしたまま管理画面の該当ページへ（A-5・2026-10-02） -->
+          <li v-if="expenseApplicationCount > 0">
+            <NuxtLink class="notif tappable todo" to="/admin/expenses" external data-testid="todo-admin-expense">
+              <span class="material-symbols-rounded notif-icon kind-todo">receipt_long</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoExpenseApplyTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoExpenseApplyText', { n: expenseApplicationCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">open_in_new</span>
+            </NuxtLink>
+          </li>
+          <li v-if="inventoryConfirmCount > 0">
+            <NuxtLink class="notif tappable todo" to="/admin/inventory" external data-testid="todo-admin-inventory">
+              <span class="material-symbols-rounded notif-icon kind-todo">inventory_2</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoInventoryConfirmTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoInventoryConfirmText', { n: inventoryConfirmCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">open_in_new</span>
+            </NuxtLink>
+          </li>
           <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
           <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
             <button class="notif tappable todo" :data-testid="`punch-todo-${t.kind}`" @click="router.push('/checkin')">

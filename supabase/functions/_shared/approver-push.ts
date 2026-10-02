@@ -6,7 +6,7 @@
 //   ここは「承認者を宛先にして、種類＝承認のお願い（approval）で送る」薄い入口。承認のお願いをオフにした人には届かない。
 //  ★送る時点で「まだ承認者か」を引き直す。購読後に権限が外れた人・退職した人には送らない。
 // ============================================================
-import { pushToWorkers, approverWorkerIds, type PushResult } from './worker-push.ts'
+import { pushToWorkers, approverWorkerIds, managerWorkerIds, type PushResult } from './worker-push.ts'
 
 export type ApproverPush = {
   title: string
@@ -21,6 +21,15 @@ export type ApproverPush = {
 
 export async function pushToApprovers(svc: any, accountId: string, msg: ApproverPush): Promise<PushResult> {
   const ids = await approverWorkerIds(svc, accountId, msg.excludeWorkerId)
+  return pushToWorkers(svc, accountId, ids, { title: msg.title, body: msg.body, url: msg.url, tag: msg.tag, kind: 'approval' })
+}
+
+/**
+ * 管理者・役員/経理（経費精算・在庫を処理する人）へ「承認のお願い」を送る（A-5・2026-10-02）。
+ * 現場責任者は経営・経理の画面を開けないので宛先に入れない（pushToApprovers との違い）。
+ */
+export async function pushToManagers(svc: any, accountId: string, msg: ApproverPush): Promise<PushResult> {
+  const ids = await managerWorkerIds(svc, accountId, msg.excludeWorkerId)
   return pushToWorkers(svc, accountId, ids, { title: msg.title, body: msg.body, url: msg.url, tag: msg.tag, kind: 'approval' })
 }
 

@@ -106,8 +106,9 @@ Deno.serve(async (req) => {
   if (body.action === 'badge') {
     const b = await approvalPendingBreakdown(svc, accountId, workerId)
     return json({
-      ok: true, approvalPending: b.overtime + b.report + b.punch + b.distance,
+      ok: true, approvalPending: b.overtime + b.report + b.punch + b.distance + b.expense + b.inventory,
       overtimePending: b.overtime, reportPending: b.report, punchPending: b.punch, distancePending: b.distance,
+      expensePending: b.expense, inventoryPending: b.inventory,
     })
   }
 

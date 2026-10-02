@@ -144,7 +144,7 @@ export function useWorkerPush() {
   }
 
   /** 承認待ちの内訳（やることの行ごと・A-3）。取れなければ 0 */
-  async function approvalBreakdown(): Promise<{ overtime: number; report: number; punch: number; distance: number }> {
+  async function approvalBreakdown(): Promise<{ overtime: number; report: number; punch: number; distance: number; expense: number; inventory: number }> {
     try {
       const r = await call('badge')
       // ★approvalPending は合計。overtimePending が無い古い EF の時だけ残業の数として使う（新しい種類の数を混ぜない）
@@ -153,8 +153,10 @@ export function useWorkerPush() {
         report: Number(r.reportPending ?? 0),
         punch: Number(r.punchPending ?? 0),
         distance: Number(r.distancePending ?? 0),
+        expense: Number(r.expensePending ?? 0),
+        inventory: Number(r.inventoryPending ?? 0),
       }
-    } catch { return { overtime: 0, report: 0, punch: 0, distance: 0 } }
+    } catch { return { overtime: 0, report: 0, punch: 0, distance: 0, expense: 0, inventory: 0 } }
   }
 
   return { state, enable, disable, setPref, approvalPending, approvalBreakdown, isSupported }

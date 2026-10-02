@@ -29,5 +29,9 @@
   "todoPunchApprovalTitle": "Punch corrections awaiting approval",
   "todoPunchApprovalText": "{n} pending. Tap to approve or reject in this app.",
   "todoDistanceApprovalTitle": "Distance requests awaiting approval",
-  "todoDistanceApprovalText": "{n} pending. Tap to approve or reject in this app."
+  "todoDistanceApprovalText": "{n} pending. Tap to approve or reject in this app.",
+  "todoExpenseApplyTitle": "Expense claims submitted",
+  "todoExpenseApplyText": "{n} pending. Tap to open Expenses in the admin screen (process them there).",
+  "todoInventoryConfirmTitle": "Inventory awaiting confirmation",
+  "todoInventoryConfirmText": "{n} pending. Tap to open Inventory in the admin screen (confirm them there)."
 }
