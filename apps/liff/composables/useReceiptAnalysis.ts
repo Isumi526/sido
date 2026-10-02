@@ -11,6 +11,8 @@ export interface ReceiptResult {
   invoiceNumber: string | null
   liters:        number | null   // 給油量(リットル)。ガソリン以外の領収書は常にnull
   account:       string | null   // 勘定科目の推定（7科目のいずれか / 判断不能はnull）。★候補であり人が上書きできる
+  issuedDate?:   string | null   // 発行日 YYYY-MM-DD（2026-10-02・読めなければnull）
+  kind?:         'parking' | 'highway' | 'train' | 'hotel' | 'gasoline' | 'other' | null   // 種類の推定（まとめて入れた時の初期値）
 }
 
 export const useReceiptAnalysis = () => {
