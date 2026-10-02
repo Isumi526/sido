@@ -46,17 +46,21 @@ async function lineGet(url: string): Promise<Response | null> {
   try { return await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } }) } catch { return null }
 }
 
-/** 送った人の表示名（グループ・トークルーム・1対1で取り方が違う）。取れなければ null */
-async function displayNameOf(source: any): Promise<string | null> {
+/**
+ * 送った人の表示名（グループ・トークルーム・1対1で取り方が違う）。取れなければ name=null。
+ * status は LINE の HTTP ステータス（取れなかった理由を受信箱の raw._diag に残す。401=アクセストークンが違う）
+ */
+async function displayNameOf(source: any): Promise<{ name: string | null; status: number | string }> {
   const uid = source?.userId
-  if (!uid) return null
+  if (!uid) return { name: null, status: 'no_user' }
   const url = source.type === 'group' ? `https://api.line.me/v2/bot/group/${source.groupId}/member/${uid}`
     : source.type === 'room' ? `https://api.line.me/v2/bot/room/${source.roomId}/member/${uid}`
     : `https://api.line.me/v2/bot/profile/${uid}`
   const res = await lineGet(url)
-  if (!res?.ok) return null
+  if (!res) return { name: null, status: TOKEN ? 'fetch_failed' : 'no_token' }
+  if (!res.ok) { console.warn('[support-line-webhook] profile failed:', res.status); return { name: null, status: res.status } }
   const j = await res.json().catch(() => null)
-  return (j?.displayName as string) ?? null
+  return { name: (j?.displayName as string) ?? null, status: res.status }
 }
 
 /** 本文の代わりに残す一行（テキスト以外） */
@@ -113,8 +117,10 @@ Deno.serve(async (req) => {
 
       let mediaPath: string | null = null
       let mediaType: string | null = null
+      let mediaStatus: number | string | null = null
       if (m && MEDIA_TYPES.includes(m.type) && (m.contentProvider?.type ?? 'line') === 'line') {
         const res = await lineGet(`https://api-data.line.me/v2/bot/message/${m.id}/content`)
+        mediaStatus = res ? res.status : (TOKEN ? 'fetch_failed' : 'no_token')
         if (res?.ok) {
           mediaType = res.headers.get('content-type')
           const path = `${new Date(ev.timestamp ?? Date.now()).toISOString().slice(0, 10)}/${m.id}.${extOf(mediaType, m)}`
@@ -126,6 +132,7 @@ Deno.serve(async (req) => {
         }
       }
 
+      const profile = await displayNameOf(source)
       const { error } = await svc.from('support_line_messages').insert({
         line_event_key: key,
         event_type: ev?.type ?? 'unknown',
@@ -133,12 +140,13 @@ Deno.serve(async (req) => {
         source_type: source.type ?? null,
         group_id: groupId,
         line_user_id: source.userId ?? null,
-        display_name: await displayNameOf(source),
+        display_name: profile.name,
         text: m ? summaryOf(m) : null,
         media_path: mediaPath,
         media_type: mediaType,
         sent_at: new Date(typeof ev?.timestamp === 'number' ? ev.timestamp : Date.now()).toISOString(),
-        raw: ev,
+        // _diag: 名前・添付を取りに行った時の LINE の答え（鍵の値は入れない）
+        raw: { ...ev, _diag: { profile: profile.status, media: mediaStatus } },
       })
       // 同時に届いた再送が先に入っていた時の一意制約違反は無視してよい
       if (error && !String(error.message ?? '').includes('duplicate')) console.error('[support-line-webhook] insert failed:', error.message)
