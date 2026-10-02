@@ -50,6 +50,19 @@
         </ul>
       </section>
 
+      <!-- 文字の大きさ（II-1・2026-10-02 シード要望15） -->
+      <section class="card" data-testid="settings-font">
+        <h2 class="card-title"><span class="material-symbols-rounded">format_size</span>{{ $t('settings.fontTitle') }}</h2>
+        <p class="hint">{{ $t('settings.fontHint') }}</p>
+        <div class="font-choice" role="radiogroup" :aria-label="$t('settings.fontTitle')">
+          <button
+            v-for="s in fontScales" :key="s" type="button" role="radio"
+            class="font-btn" :class="[`font-btn--${s}`, { active: fontScale === s }]" :aria-checked="fontScale === s"
+            :data-testid="`settings-font-${s}`" @click="setFontScale(s)"
+          >{{ $t(`settings.fontScale.${s}`) }}</button>
+        </div>
+      </section>
+
       <!-- アカウント（メール/パスワードでログインしている人だけ） -->
       <section v-if="authMode === 'password'" class="card" data-testid="settings-account">
         <h2 class="card-title"><span class="material-symbols-rounded">person</span>{{ $t('settings.accountTitle') }}</h2>
@@ -73,7 +86,9 @@
 // ============================================================
 import { useI18n } from 'vue-i18n'
 import { PUSH_KINDS, type PushKind, type WorkerPushState } from '~/composables/useWorkerPush'
+import { useFontScale } from '~/composables/useFontScale'
 
+const { scale: fontScale, setScale: setFontScale, scales: fontScales } = useFontScale()
 const { t } = useI18n()
 const { authMode } = useLiff()
 const push = useWorkerPush()
@@ -128,6 +143,12 @@ onMounted(refresh)
 .btn { border: none; border-radius: 8px; padding: 8px 14px; background: #06A050; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn:disabled { opacity: .6; cursor: default; }
 .btn--ghost { background: #f3f4f6; color: #374151; }
+.font-choice { display: flex; gap: 6px; background: #f3f4f6; border-radius: 10px; padding: 4px; }
+.font-btn { flex: 1; border: none; background: transparent; border-radius: 8px; padding: 8px 6px; color: #555; font-weight: 700; cursor: pointer; font-family: inherit; }
+.font-btn--normal { font-size: 13px; }
+.font-btn--large { font-size: 15px; }
+.font-btn--xlarge { font-size: 17px; }
+.font-btn.active { background: #fff; color: #047857; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 .kinds { list-style: none; padding: 0; margin: 0; }
 .kind + .kind { border-top: 1px solid #f1f5f9; }
 .kind-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; cursor: pointer; }
