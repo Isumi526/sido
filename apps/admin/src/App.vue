@@ -94,6 +94,7 @@
         <li v-if="canViewManagementPages"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
         <li v-if="canViewContractors"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/name-readings" class="nav-link"><span class="material-symbols-rounded nav-icon">translate</span>読み仮名の未入力</RouterLink></li>
         <!-- 車両・道具は「設定 › 使う機能」でテナント単位に開閉（2026-09-19 B-0） -->
         <li v-if="canViewManagementPages && isFeatureEnabled('vehicles')"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>備品・カード</RouterLink></li>

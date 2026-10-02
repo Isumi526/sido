@@ -37,7 +37,7 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
     const name = `E2E手入力カナ_${TS}`
     const kana = `てすとよみ_${TS}`
 
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=all', { waitUntil: 'networkidle' })   // 最初のタブは「着工」（2026-09-28）。作った現場は受注なので「すべて」で見る
     await page.locator('.btn-add').click()
 
     const modal = page.locator('.modal')
@@ -80,7 +80,7 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
       ]),
     })
 
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=all', { waitUntil: 'networkidle' })   // 最初のタブは「着工」（2026-09-28）。作った現場は受注なので「すべて」で見る
     await expect(page.locator('tr', { hasText: A_NAME })).toBeVisible({ timeout: 10000 })
 
     const names = await page.locator('tbody tr td.name').allInnerTexts()

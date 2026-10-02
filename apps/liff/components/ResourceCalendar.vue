@@ -62,20 +62,20 @@
           <div class="form-row">
             <span class="form-row-label">{{ $t('resource.worker') }}</span>
             <select v-model="form.workerId" class="input" data-testid="reservation-worker">
-              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+              <option v-for="w in workers" :key="w.id" :value="w.id">{{ $nm(w.name) }}</option>
             </select>
           </div>
           <div v-if="type === 'vehicle'" class="form-row col">
             <span class="form-row-label">{{ $t('resource.companions') }}</span>
             <div class="chips">
-              <button v-for="w in workers.filter(w => w.id !== form!.workerId)" :key="w.id" type="button" class="chip small" :class="{ on: form.companions.has(w.id) }" @click="toggleCompanion(w.id)">{{ w.name }}</button>
+              <button v-for="w in workers.filter(w => w.id !== form!.workerId)" :key="w.id" type="button" class="chip small" :class="{ on: form.companions.has(w.id) }" @click="toggleCompanion(w.id)">{{ $nm(w.name) }}</button>
             </div>
           </div>
           <div class="form-row">
             <span class="form-row-label">{{ $t('resource.site') }}</span>
             <select v-model="form.siteId" class="input" data-testid="reservation-site">
               <option :value="null">{{ $t('resource.siteNone') }}</option>
-              <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+              <option v-for="s in sites" :key="s.id" :value="s.id">{{ $nm(s.name) }}</option>
             </select>
           </div>
           <div class="form-row"><span class="form-row-label">{{ $t('resource.startDate') }}</span><input v-model="form.startDate" type="date" class="input" data-testid="reservation-start" /></div>
@@ -100,8 +100,8 @@
         <h2>{{ resourceName(detail.resource_ref) }}</h2>
         <dl class="detail">
           <dt>{{ $t('resource.detailStatus') }}</dt><dd><span class="rv-chip inline" :class="`st-${detail.status}`">{{ rvStatusLabel(detail.status) }}</span></dd>
-          <dt>{{ $t('resource.detailWorker') }}</dt><dd>{{ detail.worker_name || '—' }}<span v-if="detail.companions?.length" class="muted">（{{ companionNames(detail.companions) }}）</span></dd>
-          <dt>{{ $t('resource.detailSite') }}</dt><dd>{{ detail.site_name || '—' }}</dd>
+          <dt>{{ $t('resource.detailWorker') }}</dt><dd>{{ $nm(detail.worker_name) || '—' }}<span v-if="detail.companions?.length" class="muted">（{{ companionNames(detail.companions) }}）</span></dd>
+          <dt>{{ $t('resource.detailSite') }}</dt><dd>{{ $nm(detail.site_name) || '—' }}</dd>
           <dt>{{ $t('resource.detailPeriod') }}</dt><dd>{{ detail.start_date }}{{ detail.end_date !== detail.start_date ? `〜${detail.end_date}` : '' }} {{ reservationTimeLabel(detail) }}</dd>
           <dt>{{ $t('resource.detailPurpose') }}</dt><dd>{{ detail.purpose || '—' }}</dd>
         </dl>
@@ -119,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { weekdayShort } from '~/utils/date-label'
 /**
  * 作業員アプリ 予定管理の「車両」「道具」タブ（リソース予定B-1・2026-09-19）。
  *  admin の components/ResourceCalendar.vue と同じ構造（日×対象のマトリクス・予約は EF 経由）。
@@ -134,6 +135,7 @@ import type { ResourceTypeKey, ResourceTypeDef, Reservation, ResourceItem } from
 
 const props = defineProps<{ type: ResourceTypeKey; def?: ResourceTypeDef }>()
 const { t } = useI18n()
+const nm = useNm()   // 英語表示で名前をローマ字に（II-2）
 const api = useResourceReservations(props.type)
 const master = useMaster()
 
@@ -166,15 +168,14 @@ function scrollToRow(date: string) {
   const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
   if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
 }
-const WD = ['日', '月', '火', '水', '木', '金', '土']
-function formatDateLabel(date: string): string { const d = new Date(date + 'T00:00:00'); return t('calendar.dateLabel', { day: `${d.getMonth() + 1}/${d.getDate()}`, weekday: WD[d.getDay()] }) }
+function formatDateLabel(date: string): string { const d = new Date(date + 'T00:00:00'); return t('calendar.dateLabel', { day: `${d.getMonth() + 1}/${d.getDate()}`, weekday: weekdayShort(d) }) }
 
 function cell(date: string, ref: string) { return reservationsForCell(reservations.value, date, ref) }
 function statusToday(ref: string) { return resourceStatusToday(reservations.value, ref, today) }
 function statusLabel(s: 'in_use' | 'reserved' | 'free') { return t(s === 'in_use' ? 'resource.statusInUse' : s === 'reserved' ? 'resource.statusReserved' : 'resource.statusFree') }
 function rvStatusLabel(s: string) { return t({ reserved: 'resource.stReserved', in_use: 'resource.stInUse', done: 'resource.stDone', canceled: 'resource.stCanceled' }[s] ?? 'resource.stReserved') }
 function resourceName(ref: string) { return resources.value.find((r) => r.id === ref)?.name ?? '' }
-function companionNames(ids: string[]) { return ids.map((id) => workers.value.find((w) => w.id === id)?.name ?? '').filter(Boolean).join('・') }
+function companionNames(ids: string[]) { return ids.map((id) => nm(workers.value.find((w) => w.id === id)?.name ?? '')).filter(Boolean).join('・') }
 function canEdit(r: Reservation) { return canManage.value || isOwnReservation(r, myWorkerId.value) }
 
 async function load() {

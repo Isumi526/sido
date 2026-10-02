@@ -94,6 +94,7 @@
 </template>
 
 <script setup lang="ts">
+import { mdWithWeekday } from '~/utils/date-label'
 // ============================================================
 //  PunchCorrectionPanel — 押し間違えた打刻の修正を申請する
 //
@@ -150,8 +151,7 @@ const rejectedFor = (logId: string) => rejectedLogIds.value.has(logId)
 
 function fmt(s: string): string {
   const d = new Date(s)
-  const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()]
-  return `${d.getMonth() + 1}/${d.getDate()}（${w}） ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${mdWithWeekday(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 /**

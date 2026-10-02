@@ -42,5 +42,6 @@
   "overdueLater": "Later",
   "todayNotPunchedSubSched": "Your schedule for “{title}” has started. Open attendance and tell us whether you're working.",
   "todayWorkingSubSched": "Checked in at {time}. “{title}” is past its end time — record your check-out.",
-  "todayBacklogShort": "{count} unsubmitted"
+  "todayBacklogShort": "{count} unsubmitted",
+  "siteFallback": "Site"
 }

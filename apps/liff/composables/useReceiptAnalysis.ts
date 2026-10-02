@@ -2,6 +2,7 @@
 //  composables/useReceiptAnalysis.ts
 //  領収書 AI 解析（Gemini via Edge Function）
 // ============================================================
+import { gt } from '~/utils/i18n-global'
 
 export interface ReceiptResult {
   storeName:     string | null   // 支払い先＝発行元(店名/会社)
@@ -45,23 +46,23 @@ export const useReceiptAnalysis = () => {
           if (attempt < 2) await new Promise(r => setTimeout(r, 2000))
         } catch {
           if (attempt < 2) await new Promise(r => setTimeout(r, 2000))
-          else throw new Error('ネットワークエラーが発生しました')
+          else throw new Error(gt('report2.receiptErrNetwork'))
         }
       }
 
       if (!res || !res.ok) {
         const status = res?.status ?? 0
-        if (status === 401 || status === 403) throw new Error('認証エラーが発生しました')
-        if (status === 503 || status === 504) throw new Error('サーバーが混雑しています。しばらく待ってから再試行してください')
-        if (status >= 500) throw new Error('サーバーエラーが発生しました')
-        throw new Error(`通信エラーが発生しました（${status}）`)
+        if (status === 401 || status === 403) throw new Error(gt('report2.receiptErrAuth'))
+        if (status === 503 || status === 504) throw new Error(gt('report2.receiptErrBusy'))
+        if (status >= 500) throw new Error(gt('report2.receiptErrServer'))
+        throw new Error(gt('report2.receiptErrHttp', { status }))
       }
 
       const result = await res.json() as ReceiptResult
       useUsageLog().logFeatureUsage('receipt_ai_analyzed')   // 効果測定（ベストエフォート）
       return result
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '解析に失敗しました'
+      error.value = e instanceof Error ? e.message : gt('report2.receiptErrFailed')
       return null
     } finally {
       loading.value = null

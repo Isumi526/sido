@@ -1,20 +1,20 @@
 <template>
   <div class="login-wrap">
     <div class="login-card">
-      <h1 class="login-title">作業員ログイン</h1>
-      <p class="login-sub">ログインID（またはメールアドレス）とパスワードでログインします。</p>
+      <h1 class="login-title">{{ $t('login.title') }}</h1>
+      <p class="login-sub">{{ $t('login.sub') }}</p>
 
       <form class="login-form" @submit.prevent="submit">
         <div class="field">
-          <label>ログインID または メールアドレス</label>
-          <input v-model="email" type="text" autocapitalize="off" autocorrect="off" autocomplete="username" class="input" placeholder="ID または email" data-testid="login-email" />
+          <label>{{ $t('login.idLabel') }}</label>
+          <input v-model="email" type="text" autocapitalize="off" autocorrect="off" autocomplete="username" class="input" :placeholder="$t('login.idPlaceholder')" data-testid="login-email" />
         </div>
         <div class="field">
-          <label>パスワード</label>
-          <PasswordInput v-model="password" autocomplete="current-password" class="input" placeholder="パスワード" data-testid="login-password" />
+          <label>{{ $t('login.passwordLabel') }}</label>
+          <PasswordInput v-model="password" autocomplete="current-password" class="input" :placeholder="$t('login.passwordLabel')" data-testid="login-password" />
         </div>
         <button type="submit" class="btn-login" :disabled="loading" data-testid="login-submit">
-          {{ loading ? 'ログイン中…' : 'ログイン' }}
+          {{ loading ? $t('login.submitting') : $t('login.submit') }}
         </button>
         <p v-if="error" class="login-error" data-testid="login-error">{{ error }}</p>
       </form>
@@ -24,9 +24,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 // /login は LINE 初期化を経由しない（app.vue の isExempt）。email/pw 専用入口。
 const route = useRoute()
+const { t } = useI18n()
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -57,7 +59,7 @@ function resolveLoginEmail(input: string): string {
 
 async function submit() {
   if (!email.value.trim() || !password.value) {
-    error.value = 'ログインID（またはメール）とパスワードを入力してください'
+    error.value = t('login.errRequired')
     return
   }
   loading.value = true
@@ -69,7 +71,7 @@ async function submit() {
       password: password.value,
     })
     if (signInErr) {
-      error.value = 'ログインに失敗しました（ログインID／メールまたはパスワードが違います）'
+      error.value = t('login.errWrong')
       return
     }
     // 契約対応⑤（別紙2 §4「アクセスの記録」）: ログイン成功を operation_logs に残す（失敗は記録しない・
@@ -89,7 +91,7 @@ async function submit() {
     // セッション確立 → ホームへ。useLiff.init がセッションを検出し authenticated で動作。
     await navigateTo('/')
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'ログインに失敗しました'
+    error.value = e instanceof Error ? e.message : t('login.errFailed')
   } finally {
     loading.value = false
   }

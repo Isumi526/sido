@@ -48,12 +48,14 @@ export const createVehicle = (): VehicleExpense => ({
 })
 
 let gasItemSeq = 0
-export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', liters: undefined, fuelType: 'regular', tategae: false, fileUrls: [], noReceiptReason: '' })
+// ★支払元は「個人で立替えた」が既定（2026-10-02 シード要望1・設計「入力の手間を減らす」I-1）。
+//  会社のカードで払った時だけ本人が切り替える。保存形式（tategae: boolean）と、既に保存された行の意味は変えない。
+export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', liters: undefined, fuelType: 'regular', tategae: true, fileUrls: [], noReceiptReason: '' })
 
-export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', account: '', companions: '', noReceiptReason: '', tategae: false })
-export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: false, files: [] })
-export const createHighway = (): HighwayLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: false, etcCard: '', files: [] })
-export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, payee: '', noReceiptReason: '', tategae: false, files: [] })
+export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', account: '', companions: '', noReceiptReason: '', tategae: true })
+export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: true, files: [] })
+export const createHighway = (): HighwayLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: true, etcCard: '', files: [] })
+export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, payee: '', noReceiptReason: '', tategae: true, files: [] })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',

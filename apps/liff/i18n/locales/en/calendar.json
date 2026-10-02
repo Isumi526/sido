@@ -71,5 +71,14 @@
   "titleLabel": "Title * Required",
   "titlePlaceholder": "e.g. Day off / Business trip / Personal",
   "similarSiteWarn": "A similar site already exists (avoid duplicate registration)",
-  "siteUnset": "Site not in the register (type the name)"
+  "siteUnset": "Site not in the register (type the name)",
+  "catLabel": "Category",
+  "catManage": "Manage",
+  "shareWithOthers": "Share with other users",
+  "catSettings": "Category settings",
+  "catClose": "Close",
+  "catHint": "You can edit the names. Set a category to \"Hidden\" to remove it from the choices when adding a schedule (colors are fixed).",
+  "catShown": "Shown",
+  "catHidden": "Hidden",
+  "nextDayPrefix": "+1 "
 }

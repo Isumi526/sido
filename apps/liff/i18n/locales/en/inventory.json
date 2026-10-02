@@ -69,5 +69,15 @@
   "balancesNote": "Warehouse = leftovers at the base. Site = taken out and not yet returned (used amounts are not deducted). Not accounting inventory.",
   "balancesEmpty": "No stock yet",
   "locBase": "Warehouse",
-  "locSite": "Site"
+  "locSite": "Site",
+  "catBoard": "Board",
+  "catBase": "Framing materials",
+  "catFloor": "Flooring",
+  "catCeiling": "Ceiling materials",
+  "catAdhesive": "Adhesives / supplies",
+  "catScrew": "Screws / hardware",
+  "catPaint": "Paint / sealant",
+  "catProtect": "Protection / consumables",
+  "catOther": "Other",
+  "baseUnspecified": "No base set"
 }

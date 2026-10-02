@@ -28,5 +28,7 @@
   "inventory": "在庫",
   "tools": "道具",
   "settings": "設定",
-  "adminApp": "管理画面"
+  "adminApp": "管理画面",
+  "daysOff": "休み・有給の予定",
+  "personalExpense": "経費申請"
 }

@@ -17,3 +17,12 @@ export function gt(key: string, params?: Record<string, unknown>): string {
   if (!_t) return key
   return params ? _t(key, params) : _t(key)
 }
+
+// 今の言語（'ja' | 'en'）。plugins/i18n.client.ts が注入する。computed の中で呼べば言語の切り替えに追従する
+let _locale: (() => string) | null = null
+export function setGlobalLocaleGetter(get: () => string) {
+  _locale = get
+}
+export function currentLocale(): string {
+  return _locale ? _locale() : 'ja'
+}

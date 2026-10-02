@@ -165,7 +165,7 @@
         </div>
         <div class="proxy-modal-body">
           <div v-if="proxy.isProxyMode.value" class="proxy-current">
-            <span>{{ t('home.proxyCurrentPrefix') }}<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
+            <span>{{ t('home.proxyCurrentPrefix') }}<strong>{{ $nm(proxy.proxyTarget.value?.name) }}</strong></span>
             <button class="proxy-clear-btn" @click="proxy.clearProxy(); proxyModalOpen = false">{{ t('home.proxyClear') }}</button>
           </div>
           <div v-if="proxyLoading" class="proxy-loading">{{ t('home.proxyLoading') }}</div>
@@ -177,9 +177,9 @@
               :class="{ selected: proxy.proxyTarget.value?.id === w.id }"
               @click="selectProxy(w)"
             >
-              <div class="proxy-user-avatar">{{ w.name.charAt(0) }}</div>
+              <div class="proxy-user-avatar">{{ $nm(w.name).charAt(0) }}</div>
               <div class="proxy-user-info">
-                <div class="proxy-user-name">{{ w.name }}</div>
+                <div class="proxy-user-name">{{ $nm(w.name) }}</div>
                 <div class="proxy-user-role">{{ w.worker_role === 'factory' ? t('common.roleFactory') : t('common.roleSite') }}</div>
               </div>
               <span v-if="proxy.proxyTarget.value?.id === w.id" class="material-symbols-rounded proxy-check">check_circle</span>
@@ -192,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import { mdWithWeekday } from '~/utils/date-label'
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus, isInDeadlineAlertWindow } from '~/composables/useExpense'
@@ -244,8 +245,7 @@ const deadlineWindowOpen = computed(() => recentPeriodKeys().some(k => isInDeadl
 
 /** 'YYYY-MM-DD' → 'M/D（曜）' */
 function formatMd(date: string): string {
-  const d = new Date(date + 'T00:00:00')
-  return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
+  return mdWithWeekday(date)
 }
 
 /**
@@ -253,6 +253,7 @@ function formatMd(date: string): string {
  * ★「次に押すもの」を必ず1つ以上返す。ここが空だと画面は状態を告げるだけで、
  *  結局ユーザーが入口を探すことになる（それが今回の指摘の元）。
  */
+const nm = useNm()   // 英語表示で名前をローマ字に（II-2）
 const todayView = computed(() => {
   // 読み込み中は「未出勤」の見た目を借りる。実在する文言なので行数・高さが実物と同じになる
   if (!homeReady.value) {
@@ -273,7 +274,7 @@ const todayView = computed(() => {
         title: t('home.todayWorking'),
         // 予定の終了が過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
         sub: punchPrompt.value?.kind === 'checkout'
-          ? t('home.todayWorkingSubSched', { time: s.checkinTime ?? '—', title: punchPrompt.value.title })
+          ? t('home.todayWorkingSubSched', { time: s.checkinTime ?? '—', title: nm(punchPrompt.value.title) })
           : t('home.todayWorkingSub', { time: s.checkinTime ?? '—' }),
         actions: [
           { to: '/checkin', label: t('home.actCheckout'), icon: 'logout', primary: true, testId: 'today-act-checkout' },
@@ -307,7 +308,7 @@ const todayView = computed(() => {
         title: t('home.todayNotPunched'),
         // 予定の開始が近い/過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
         sub: punchPrompt.value?.kind === 'checkin'
-          ? t('home.todayNotPunchedSubSched', { title: punchPrompt.value.title })
+          ? t('home.todayNotPunchedSubSched', { title: nm(punchPrompt.value.title) })
           : t('home.todayNotPunchedSub'),
         actions: [{ to: '/checkin', label: t('home.actCheckin'), icon: 'login', primary: true, testId: 'today-act-checkin' }],
       }
@@ -384,14 +385,14 @@ async function refreshPunchPrompt(workerId: string) {
       for (const s of mine) {
         const startMin = hhmm(s.start_time)
         if (startMin != null && nowMin >= startMin - 30) {
-          punchPrompt.value = { kind: 'checkin', title: s.title || '現場' }; return
+          punchPrompt.value = { kind: 'checkin', title: s.title || t('home.siteFallback') }; return
         }
       }
     } else if (!hasCheckout) {
       for (const s of mine) {
         const endMin = hhmm(s.end_time)
         if (endMin != null && nowMin >= endMin) {
-          punchPrompt.value = { kind: 'checkout', title: s.title || '現場' }; return
+          punchPrompt.value = { kind: 'checkout', title: s.title || t('home.siteFallback') }; return
         }
       }
     }

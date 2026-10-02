@@ -25,11 +25,9 @@ let logId = ''
  */
 async function openFixPanel(page: import('@playwright/test').Page) {
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.rule-row, [data-testid="loc-get"], [data-testid="more-actions"]', { timeout: 20000 })
+  await page.waitForSelector('.rule-row, [data-testid="more-actions"]', { timeout: 20000 })
   const rows = page.locator('.rule-row')
   for (let i = 0, n = await rows.count(); i < n; i++) await rows.nth(i).click()
-  const loc = page.getByTestId('loc-get')
-  if (await loc.count()) await loc.click().catch(() => {})
   const more = page.getByTestId('more-actions')
   await expect(more).toBeVisible({ timeout: 20000 })
   await more.locator('summary').click()

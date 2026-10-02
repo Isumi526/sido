@@ -24,5 +24,12 @@
     "reminder": "Punch reminders, unsubmitted reports",
     "chat": "Mentions of you, new site chat messages",
     "announcement": "Company-wide announcements, site documents to confirm"
+  },
+  "fontTitle": "Text size",
+  "fontHint": "Choose the text size on this device. Larger sizes may change the layout slightly.",
+  "fontScale": {
+    "normal": "Standard",
+    "large": "Large",
+    "xlarge": "Extra large"
   }
 }

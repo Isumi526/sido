@@ -5,9 +5,10 @@
 //  - 既定ロケールは ja。localStorage('app_locale') に保存した選択を復元
 //  - 未翻訳キーは fallbackLocale(ja) に自動フォールバック
 // ============================================================
+import type { Ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import messages, { SUPPORTED_LOCALES } from '~/i18n/messages'
-import { setGlobalTranslator } from '~/utils/i18n-global'
+import { setGlobalTranslator, setGlobalLocaleGetter } from '~/utils/i18n-global'
 
 export const LOCALE_STORAGE_KEY = 'app_locale'
 
@@ -34,4 +35,9 @@ export default defineNuxtPlugin((nuxtApp) => {
   setGlobalTranslator((key, params) =>
     params ? i18n.global.t(key, params) : i18n.global.t(key),
   )
+
+  setGlobalLocaleGetter(() => String(i18n.global.locale.value))
+
+  // setup 外のプラグイン（name-display.client.ts の $nm）が今の言語を見るため
+  return { provide: { i18nLocale: i18n.global.locale as unknown as Ref<string> } }
 })

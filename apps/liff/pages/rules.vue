@@ -3,46 +3,47 @@
     <AppNav :subtitle="$t('nav.rulebook')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
       <h1 class="ttl">{{ $t('nav.rulebook') }}</h1>
-      <p class="lead">日々の運用ルールをまとめています。提出・申請の期限を守って、正確な記録にご協力ください。</p>
+      <p class="lead">{{ $t('rules.lead') }}</p>
 
+      <!-- 太字部分は i18n-t の名前付きスロットで差し込む（言語ごとに語順が違うため） -->
       <section class="card">
-        <h2 class="sec"><span class="num">1</span>日報・経費の提出と編集</h2>
+        <h2 class="sec"><span class="num">1</span>{{ $t('rules.s1.title') }}</h2>
         <ul class="rules">
-          <li><strong>提出・編集ができるのは「当日を含む過去3日以内」</strong>です（本日／前日／前々日まで）。</li>
-          <li>それより前の日付は<strong>ロックされ、提出・編集できません</strong>。日報・経費のどちらも対象です。</li>
-          <li>やむを得ず期限を過ぎた分を直したいときは、<strong>管理者へ許可を依頼</strong>してください。許可されると、その日に限り再度入力できます。</li>
-          <li>提出忘れを防ぐため、未提出のリマインドが届きます。早めの提出をお願いします。</li>
+          <li><i18n-t keypath="rules.s1.r1"><template #b><strong>{{ $t('rules.s1.r1b') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s1.r2"><template #b><strong>{{ $t('rules.s1.r2b') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s1.r3"><template #b><strong>{{ $t('rules.s1.r3b') }}</strong></template></i18n-t></li>
+          <li>{{ $t('rules.s1.r4') }}</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2 class="sec"><span class="num">2</span>残業の申請</h2>
+        <h2 class="sec"><span class="num">2</span>{{ $t('rules.s2.title') }}</h2>
         <ul class="rules">
-          <li>残業が発生する日は、<strong>当日の16:00までに残業申請</strong>を行ってください。</li>
-          <li>メニューの<strong>「残業申請」</strong>から、希望の終了時刻と理由を入力して申請します。管理者が承認すると、その日だけ定時を超える終了時刻を入力できます。</li>
-          <li>未申請の日は、<strong>定時（終了時刻）以降の入力ができません</strong>。</li>
+          <li><i18n-t keypath="rules.s2.r1"><template #b><strong>{{ $t('rules.s2.r1b') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s2.r2"><template #b><strong>{{ $t('rules.s2.r2b') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s2.r3"><template #b><strong>{{ $t('rules.s2.r3b') }}</strong></template></i18n-t></li>
         </ul>
       </section>
 
       <section class="card">
-        <h2 class="sec"><span class="num">3</span>勤務時間の基準</h2>
+        <h2 class="sec"><span class="num">3</span>{{ $t('rules.s3.title') }}</h2>
         <ul class="rules">
-          <li>勤務時間は、<strong>現場ごとに担当者が設定した開始／終了時刻が基準</strong>になります。</li>
-          <li>早朝搬入など例外的に時間がずれる場合は、残業申請で対応してください。</li>
+          <li><i18n-t keypath="rules.s3.r1"><template #b><strong>{{ $t('rules.s3.r1b') }}</strong></template></i18n-t></li>
+          <li>{{ $t('rules.s3.r2') }}</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2 class="sec"><span class="num">4</span>出退勤の打刻</h2>
+        <h2 class="sec"><span class="num">4</span>{{ $t('rules.s4.title') }}</h2>
         <ul class="rules">
-          <li>現場への<strong>到着時と退出時の打刻は必須</strong>です。忘れずに行ってください。</li>
-          <li>打刻は<strong>現場のQRコードを読み取る</strong>か、メニューの<strong>「出退勤」</strong>から行えます。</li>
-          <li>QRコードが無い現場は、<strong>「出退勤」から現場を選んで</strong>打刻してください（元請けや現場名で絞り込めます）。</li>
-          <li>確認事項（チェック項目）が設定された現場では、出退勤時に確認のうえチェックしてください。</li>
+          <li><i18n-t keypath="rules.s4.r1"><template #b><strong>{{ $t('rules.s4.r1b') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s4.r2"><template #b1><strong>{{ $t('rules.s4.r2b1') }}</strong></template><template #b2><strong>{{ $t('rules.s4.r2b2') }}</strong></template></i18n-t></li>
+          <li><i18n-t keypath="rules.s4.r3"><template #b><strong>{{ $t('rules.s4.r3b') }}</strong></template></i18n-t></li>
+          <li>{{ $t('rules.s4.r4') }}</li>
         </ul>
       </section>
 
-      <p class="note">※ 本ルールは運用に合わせて更新されることがあります。最新の内容はこのページでご確認ください。</p>
+      <p class="note">{{ $t('rules.note') }}</p>
     </main>
   </div>
 </template>

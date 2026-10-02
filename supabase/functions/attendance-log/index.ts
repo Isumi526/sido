@@ -18,7 +18,7 @@
 //  action:
 //   recent    { hours? }                          → 自分の直近ログ（出勤中判定用）
 //   for-report{ from, to, workerId? }             → 日報に出す実打刻（現場名つき）
-//   punch     { siteId, type, targetWorkerId?, agreedRuleTexts?, agreedDocumentNames?, lat?, lng? }
+//   punch     { siteId, type, targetWorkerId?, agreedRuleTexts?, agreedDocumentNames?, lat?, lng?, locationMissingReason? }  ※位置が無ければ理由が必須
 //   backdate  { siteId, date, checkin?, checkout? } → 打刻し忘れた日の後追い入力（本人のみ）
 //   overtime-decide { id, status, note? }          → ★残業承認/却下（管理画面・作業員アプリ共通・JWT専用）
 //   overtime-approval-list {} / overtime-approval-detail { id } → 作業員アプリの「やること」の承認（承認者・JWT専用・読むだけ）
@@ -641,6 +641,13 @@ Deno.serve(async (req) => {
         .eq('id', body.workCategoryId).eq('account_id', caller.accountId).maybeSingle()
       workCategoryId = cat?.id ?? null
     }
+    // ★出退勤はボタン1つ（2026-10-02 I-2）。位置が取れない時は理由を書けば打刻できる（承認はなし＝確認事項4=A）。
+    //  位置が取れた打刻に理由は残さない。理由は管理画面の出退勤ログに「位置なし」と一緒に出す。
+    const hasLocation = typeof body.lat === 'number' && typeof body.lng === 'number'
+    const missingReason = typeof body.locationMissingReason === 'string' && body.locationMissingReason.trim()
+      ? body.locationMissingReason.trim().slice(0, 200) : null
+    //  ★理由が無くてもサーバでは弾かない（理由の入力は画面で求める）。弾くと、開きっぱなしの古い画面から押した人が
+    //   打刻できなくなる。理由の無い「位置なし」は今までどおり「—」と出る。
     const { data, error } = await svc.from('attendance_logs').insert({
       site_id: siteId || null,
       work_category_id: workCategoryId,
@@ -650,8 +657,9 @@ Deno.serve(async (req) => {
       checked_at: new Date().toISOString(),
       agreed_rule_texts: Array.isArray(body.agreedRuleTexts) ? body.agreedRuleTexts.map(String) : [],
       agreed_document_names: Array.isArray(body.agreedDocumentNames) ? body.agreedDocumentNames.map(String) : null,
-      location_lat: typeof body.lat === 'number' ? body.lat : null,
-      location_lng: typeof body.lng === 'number' ? body.lng : null,
+      location_lat: hasLocation ? body.lat : null,
+      location_lng: hasLocation ? body.lng : null,
+      location_missing_reason: hasLocation ? null : missingReason,
       proxy_worker_id: target !== caller.workerId ? caller.workerId : null,
       backdated: false,
     }).select('id').maybeSingle()

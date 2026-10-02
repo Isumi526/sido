@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('punchApproval.detailTitle')" />
+    <AppNav :subtitle="$t('punchApproval.detailTitle')" guide="todo" />
 
     <main class="main">
       <NuxtLink to="/approvals/punch" class="back" data-testid="pca-back">
@@ -24,7 +24,7 @@
         </div>
 
         <section class="card">
-          <div class="who"><span class="name" data-testid="pca-name">{{ d.item.worker_name || '—' }}</span></div>
+          <div class="who"><span class="name" data-testid="pca-name">{{ $nm(d.item.worker_name) || '—' }}</span></div>
           <dl class="detail">
             <dt>{{ $t('punchApproval.date') }}</dt>
             <dd>{{ d.item.log ? fmtDate(d.item.log.original_checked_at ?? d.item.log.checked_at) : '—' }}</dd>

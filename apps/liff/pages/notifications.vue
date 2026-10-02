@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('notifications.subtitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
+    <AppNav :subtitle="$t('notifications.subtitle')" guide="todo" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
       <!-- 通知の設定（この端末のオン/オフ・受け取る種類）は設定ページへ（A-1・2026-09-27） -->
@@ -130,7 +130,7 @@
               <span class="material-symbols-rounded notif-icon kind-todo">assignment_late</span>
               <span class="notif-body">
                 <span class="notif-title">{{ $t('notifications.todoDocTitle') }}</span>
-                <span class="notif-text">{{ d.siteName }}：{{ d.name || $t('notifications.untitled') }}</span>
+                <span class="notif-text">{{ $nm(d.siteName) }}：{{ d.name || $t('notifications.untitled') }}</span>
                 <span class="notif-time">{{ fmtWhen(d.createdAt) }}</span>
               </span>
               <span class="material-symbols-rounded notif-chev">chevron_right</span>

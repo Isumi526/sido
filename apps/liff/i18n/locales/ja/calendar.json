@@ -71,5 +71,14 @@
   "titleLabel": "タイトル ※必須",
   "titlePlaceholder": "例：休暇 / 出張 / 私用",
   "similarSiteWarn": "似た現場が既にあります（重複登録に注意）",
-  "siteUnset": "現場が台帳に無い（名前だけ入れる）"
+  "siteUnset": "現場が台帳に無い（名前だけ入れる）",
+  "catLabel": "カテゴリ",
+  "catManage": "管理",
+  "shareWithOthers": "他のユーザーに共有",
+  "catSettings": "カテゴリ設定",
+  "catClose": "閉じる",
+  "catHint": "名前は編集できます。使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます（色は固定）。",
+  "catShown": "表示",
+  "catHidden": "非表示",
+  "nextDayPrefix": "翌"
 }

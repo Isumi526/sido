@@ -30,5 +30,14 @@
   "roleSite": "現場",
   "language": "言語",
   "langJa": "日本語",
-  "langEn": "English"
+  "langEn": "English",
+  "show": "表示",
+  "hide": "隠す",
+  "hint": "ヒント",
+  "showHint": "{label}のヒントを表示",
+  "consentTitle": "個人情報の取扱いについて",
+  "consentAgree": "上記の内容を確認し、同意します",
+  "consentSubmit": "同意して続ける",
+  "consentSending": "送信中…",
+  "consentSendFailed": "送信に失敗しました。通信環境を確認してもう一度お試しください。"
 }

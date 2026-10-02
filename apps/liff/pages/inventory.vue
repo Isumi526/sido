@@ -40,7 +40,7 @@
           <p v-if="suggestMsg" class="hint" data-testid="inv-ai-msg">{{ suggestMsg }}</p>
           <div v-if="suggestion && suggestion.candidates.length" class="cands" data-testid="inv-ai-candidates">
             <button v-for="c in suggestion.candidates" :key="c.id" type="button" class="cand" :class="{ on: itemId === c.id }" :data-testid="`inv-ai-cand-${c.id}`" @click="pickItem(c.id)">
-              <span class="cand-name">{{ c.name }}</span><span v-if="c.category" class="cand-cat">{{ c.category }}</span>
+              <span class="cand-name">{{ c.name }}</span><span v-if="c.category" class="cand-cat">{{ catLabel(c.category) }}</span>
             </button>
           </div>
 
@@ -54,14 +54,14 @@
             <!-- 区分→詳細（AC1/AC2）: 区分チップで絞り、予測検索で探す -->
             <div v-if="categories.length" class="cats">
               <button type="button" class="cat" :class="{ on: !catFilter }" data-testid="inv-cat-all" @click="catFilter = ''">{{ $t('inventory.catAll') }}</button>
-              <button v-for="c in categories" :key="c" type="button" class="cat" :class="{ on: catFilter === c }" :data-testid="`inv-cat-${c}`" @click="catFilter = catFilter === c ? '' : c">{{ c }}</button>
+              <button v-for="c in categories" :key="c" type="button" class="cat" :class="{ on: catFilter === c }" :data-testid="`inv-cat-${c}`" @click="catFilter = catFilter === c ? '' : c">{{ catLabel(c) }}</button>
             </div>
             <input v-model="query" type="search" class="input" :placeholder="$t('inventory.searchPlaceholder')" data-testid="inv-item-search" @keydown.enter.prevent />
             <ul v-if="matches.length" class="matches" data-testid="inv-item-matches">
               <li v-for="it in matches" :key="it.id">
                 <button type="button" class="match" :data-testid="`inv-item-opt-${it.id}`" @click="pickItem(it.id)">
                   <span class="match-name">{{ it.name }}<span v-if="it.unit" class="picked-unit">（{{ it.unit }}）</span></span>
-                  <span class="match-sub"><span v-if="it.category">{{ it.category }} · </span>{{ $t('inventory.stock', { n: fmt(it.current_qty) }) }}</span>
+                  <span class="match-sub"><span v-if="it.category">{{ catLabel(it.category) }} · </span>{{ $t('inventory.stock', { n: fmt(it.current_qty) }) }}</span>
                 </button>
               </li>
             </ul>
@@ -74,7 +74,7 @@
               <div class="new-row">
                 <select v-model="newCategory" class="select" data-testid="inv-new-category">
                   <option value="">{{ $t('inventory.newCategoryNone') }}</option>
-                  <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+                  <option v-for="c in categories" :key="c" :value="c">{{ catLabel(c) }}</option>
                 </select>
                 <input v-model="newUnit" type="text" class="input unit" :placeholder="$t('inventory.newUnitPlaceholder')" data-testid="inv-new-unit" @keydown.enter.prevent />
               </div>
@@ -94,10 +94,10 @@
             <select v-model="siteId" class="select" data-testid="inv-site">
               <option value="">{{ $t('common.select') }}</option>
               <optgroup v-if="todaySites.length" :label="$t('inventory.siteToday')">
-                <option v-for="s in todaySites" :key="`t-${s.id}`" :value="s.id">{{ s.name }}</option>
+                <option v-for="s in todaySites" :key="`t-${s.id}`" :value="s.id">{{ $nm(s.name) }}</option>
               </optgroup>
               <optgroup :label="$t('inventory.siteAll')">
-                <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option v-for="s in sites" :key="s.id" :value="s.id">{{ $nm(s.name) }}</option>
               </optgroup>
             </select>
           </template>
@@ -128,7 +128,7 @@
             <li v-for="p in pendingMine" :key="p.id" class="row" data-testid="inv-pending-row">
               <span class="badge" :class="p.kind">{{ kindLabel(p.kind) }}</span>
               <span class="row-main">{{ p.inventory_items?.name ?? p.ai_guess_name ?? $t('inventory.pendingNoItem') }} <b>{{ fmt(p.qty) }}</b>{{ p.inventory_items?.unit ?? '' }}</span>
-              <span v-if="p.sites?.name" class="row-sub">{{ p.sites.name }}</span>
+              <span v-if="p.sites?.name" class="row-sub">{{ $nm(p.sites.name) }}</span>
               <span class="pstatus" :class="p.status" :data-testid="`inv-pending-status-${p.id}`">{{ p.status === 'pending' ? $t('inventory.pendingStatusPending') : p.status === 'confirmed' ? $t('inventory.pendingStatusConfirmed') : $t('inventory.pendingStatusRejected') }}</span>
               <span v-if="p.status === 'rejected' && p.reject_reason" class="row-sub reason">{{ p.reject_reason }}</span>
               <span class="row-sub">{{ fmtDate(p.created_at) }}</span>
@@ -143,10 +143,10 @@
           <div v-if="!balanceGroups.length" class="hint">{{ $t('inventory.balancesEmpty') }}</div>
           <ul v-else class="list">
             <li v-for="g in balanceGroups" :key="g.item_id" class="bal-item" :data-testid="`inv-bal-${g.item_id}`">
-              <div class="bal-name">{{ g.item_name }}<span v-if="g.category" class="row-sub"> · {{ g.category }}</span></div>
+              <div class="bal-name">{{ g.item_name }}<span v-if="g.category" class="row-sub"> · {{ catLabel(g.category) }}</span></div>
               <div v-for="b in g.rows" :key="`${b.location_kind}-${b.location_id}`" class="bal-row" :data-testid="`inv-bal-row-${g.item_id}-${b.location_kind}-${b.location_id ?? 'none'}`">
                 <span class="badge" :class="b.location_kind === 'base' ? 'in' : 'out'">{{ b.location_kind === 'base' ? $t('inventory.locBase') : $t('inventory.locSite') }}</span>
-                <span class="row-main">{{ b.location_name }} <b>{{ fmt(b.qty) }}</b>{{ g.unit ?? '' }}</span>
+                <span class="row-main">{{ b.location_kind === 'base' && !b.location_id ? $t('inventory.baseUnspecified') : $nm(b.location_name) }} <b>{{ fmt(b.qty) }}</b>{{ g.unit ?? '' }}</span>
                 <span v-if="b.last_at" class="row-sub">{{ fmtDate(b.last_at) }}</span>
                 <a v-if="b.last_photo_url" :href="b.last_photo_url" target="_blank" rel="noopener" class="bal-photo" :aria-label="$t('inventory.photos')"><span class="material-symbols-rounded">photo</span></a>
               </div>
@@ -161,7 +161,7 @@
             <li v-for="m in recent" :key="m.id" class="row" data-testid="inv-recent-row">
               <span class="badge" :class="m.kind">{{ kindLabel(m.kind) }}</span>
               <span class="row-main">{{ m.inventory_items?.name ?? '—' }} <b>{{ m.delta > 0 ? '+' : '' }}{{ fmt(m.delta) }}</b>{{ m.inventory_items?.unit ?? '' }}</span>
-              <span v-if="m.sites?.name" class="row-sub">{{ m.sites.name }}</span>
+              <span v-if="m.sites?.name" class="row-sub">{{ $nm(m.sites.name) }}</span>
               <span class="row-sub">{{ fmtDate(m.created_at) }}</span>
             </li>
           </ul>
@@ -296,6 +296,16 @@ function fmt(n: number | string): string { const v = Number(n); return Number.is
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+// 区分（既定セットの値は日本語のまま保存される）→ 表示名。既定セット以外（各社が足した区分）はそのまま出す
+const CAT_KEYS: Record<string, string> = {
+  'ボード': 'catBoard', '下地材': 'catBase', '床材': 'catFloor', '天井材': 'catCeiling', '接着剤・副資材': 'catAdhesive',
+  'ビス・金物': 'catScrew', '塗料・シーリング': 'catPaint', '養生・消耗品': 'catProtect', 'その他': 'catOther',
+}
+function catLabel(c: string | null | undefined): string {
+  if (!c) return ''
+  const k = CAT_KEYS[c]
+  return k ? t(`inventory.${k}`) : c
 }
 function kindLabel(k: string): string {
   return k === 'in' ? t('inventory.kindIn') : k === 'out' ? t('inventory.kindOut') : k === 'return' ? t('inventory.kindReturn') : t('inventory.kindAdjust')

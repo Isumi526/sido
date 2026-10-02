@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="$t('overtimeApproval.title')" />
+    <AppNav :subtitle="$t('overtimeApproval.title')" guide="todo" />
 
     <main class="main">
       <p class="hint">{{ $t('overtimeApproval.hint') }}</p>
@@ -19,7 +19,7 @@
           <NuxtLink :to="`/approvals/overtime/${r.id}`" class="row" data-testid="ota-row">
             <span class="row-body">
               <span class="row-title">
-                {{ r.worker_name || '—' }}
+                {{ $nm(r.worker_name) || '—' }}
                 <span class="row-date">{{ fmtDate(r.date) }}</span>
                 <span v-if="r.is_late" class="late-badge">{{ $t('overtimeApproval.late') }}</span>
               </span>
@@ -29,7 +29,7 @@
                 <template v-if="r.reported_end_time">{{ $t('overtimeApproval.reportedEnd') }} {{ hm(r.reported_end_time) }}</template>
                 <template v-else-if="r.requested_end_time">{{ $t('overtimeApproval.requestedEnd') }} {{ hm(r.requested_end_time) }}</template>
               </span>
-              <span v-if="r.site_names?.length" class="row-sub">{{ r.site_names.join('、') }}</span>
+              <span v-if="r.site_names?.length" class="row-sub">{{ r.site_names.map($nm).join(', ') }}</span>
             </span>
             <span class="material-symbols-rounded chev">chevron_right</span>
           </NuxtLink>

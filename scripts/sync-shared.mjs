@@ -180,6 +180,14 @@ const SHARES = [
       'supabase/functions/_shared/billing-trial.gen.ts',
     ],
   },
+  {
+    // 作業員アプリの画面ごとの「使い方」（II-4）。作業員アプリの AI チャット（II-5）の根拠にも同じものを使う
+    src: 'shared/worker-guides.ts',
+    dests: [
+      'apps/liff/utils/worker-guides.gen.ts',
+      'supabase/functions/_shared/worker-guides.gen.ts',
+    ],
+  },
 ]
 
 const HEADER = (srcRel) =>

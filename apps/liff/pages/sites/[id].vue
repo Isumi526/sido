@@ -49,8 +49,8 @@
           <div class="tools-title"><span class="material-symbols-rounded">construction</span>{{ $t('tools.atSite', { n: siteTools.length }) }}</div>
           <ul class="tools-list">
             <li v-for="t in siteTools" :key="t.id" class="tools-row" :data-testid="`site-tool-${t.id}`">
-              <NuxtLink :to="`/tools/${t.id}`" class="tools-link">{{ t.name }}<span v-if="t.kind" class="tools-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="tools-sub">{{ t.workers?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
+              <NuxtLink :to="`/tools/${t.id}`" class="tools-link">{{ t.name }}<span v-if="t.kind" class="tools-sub">{{ $t('tools.kindParen', { kind: t.kind }) }}</span></NuxtLink>
+              <span class="tools-sub">{{ $nm(t.workers?.name) || '—' }}{{ $t('tools.sep') }}{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </div>
@@ -63,8 +63,8 @@
           <div v-if="inviteOpen" class="invite-panel">
             <p v-if="!shareCandidates.length" class="state">{{ $t('sitesView.inviteNoCandidates') }}</p>
             <label v-for="u in shareCandidates" :key="u.id" class="invite-row" data-testid="site-invite-row">
-              <span class="invite-avatar" :style="{ background: avatarColor(u.name) }">{{ (u.name || '?').charAt(0) }}</span>
-              <span class="invite-name">{{ u.name }}</span>
+              <span class="invite-avatar" :style="{ background: avatarColor(u.name) }">{{ ($nm(u.name) || '?').charAt(0) }}</span>
+              <span class="invite-name">{{ $nm(u.name) }}</span>
               <input
                 type="checkbox" class="invite-checkbox-native" :checked="sharedUserIds.includes(u.id)"
                 @change="onToggleShare(u.id, ($event.target as HTMLInputElement).checked)"
@@ -82,8 +82,8 @@
           </button>
           <div v-if="inviteOpen" class="invite-panel">
             <div v-for="m in members" :key="m.id" class="invite-row invite-row-readonly">
-              <span class="invite-avatar" :style="{ background: avatarColor(m.name) }">{{ (m.name || '?').charAt(0) }}</span>
-              <span class="invite-name">{{ m.name }}</span>
+              <span class="invite-avatar" :style="{ background: avatarColor(m.name) }">{{ ($nm(m.name) || '?').charAt(0) }}</span>
+              <span class="invite-name">{{ $nm(m.name) }}</span>
             </div>
           </div>
         </div>

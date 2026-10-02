@@ -28,5 +28,7 @@
   "inventory": "Inventory",
   "tools": "Tools",
   "settings": "Settings",
-  "adminApp": "Admin console"
+  "adminApp": "Admin console",
+  "daysOff": "Days off",
+  "personalExpense": "Expense claim"
 }

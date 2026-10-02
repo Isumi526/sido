@@ -1,11 +1,11 @@
 <template>
   <div v-if="show" class="consent-overlay" data-testid="consent-gate">
     <div class="consent-card">
-      <h1 class="consent-title">個人情報の取扱いについて</h1>
+      <h1 class="consent-title">{{ $t('common.consentTitle') }}</h1>
       <div class="consent-body" data-testid="consent-text">{{ text }}</div>
       <label class="consent-check">
         <input type="checkbox" v-model="checked" data-testid="consent-checkbox" />
-        <span>上記の内容を確認し、同意します</span>
+        <span>{{ $t('common.consentAgree') }}</span>
       </label>
       <p v-if="error" class="consent-error" data-testid="consent-error">{{ error }}</p>
       <button
@@ -13,7 +13,7 @@
         :disabled="!checked || busy"
         data-testid="consent-submit"
         @click="submit"
-      >{{ busy ? '送信中…' : '同意して続ける' }}</button>
+      >{{ busy ? $t('common.consentSending') : $t('common.consentSubmit') }}</button>
     </div>
   </div>
 </template>
@@ -28,6 +28,9 @@
 //  ★同意しないと閉じられない（AC3・チェックボックス＋送信ボタンでのみ進める）。
 //   ×ボタン・背景クリックでの閉鎖は用意しない＝これが要件そのもの。
 // ============================================================
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const consent = useWorkerConsent()
 
 const show   = ref(false)
@@ -49,7 +52,7 @@ async function submit() {
   error.value = ''
   try {
     const res = await consent.consent()
-    if (!res.ok) { error.value = '送信に失敗しました。通信環境を確認してもう一度お試しください。'; return }
+    if (!res.ok) { error.value = t('common.consentSendFailed'); return }
     show.value = false
   } finally {
     busy.value = false

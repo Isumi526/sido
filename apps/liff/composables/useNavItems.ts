@@ -45,6 +45,7 @@ export function useNavItems(
       { path: '/history',          icon: 'history',           label: t('nav.reportHistory'),    section: 'daily' },
       { path: '/overtime',         icon: 'more_time',         label: t('nav.overtimeRequest'),  section: 'daily' },
       { path: '/paid-leave',       icon: 'beach_access',      label: t('nav.paidLeave'),        section: 'daily', testId: 'menu-paid-leave' },
+      { path: '/days-off',         icon: 'event_busy',        label: t('nav.daysOff'),          section: 'daily', testId: 'menu-days-off' },
       { path: '/notifications',    icon: 'notifications',     label: t('nav.notifications'),    section: 'plan', testId: 'menu-notifications' },
       { path: '/calendar',         icon: 'calendar_month',    label: t('nav.schedule'),         section: 'plan' },
       { path: '/company-schedule', icon: 'apartment',         label: t('nav.companySchedule'),  section: 'plan' },
@@ -57,7 +58,7 @@ export function useNavItems(
     if (canApplyPersonalExpense?.()) {
       // 挿入位置は「有給の直前」。数値の決め打ちだと上のリストを足し引きするたび静かにズレるので path で引く。
       const at = list.findIndex(i => i.path === '/paid-leave')
-      list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '経費申請', section: 'daily', testId: 'menu-personal-expense' })
+      list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: t('nav.personalExpense'), section: 'daily', testId: 'menu-personal-expense' })
     }
     // 在庫①〜④（2026-09-14〜）: 引き上げ・持出・入荷の記録＋写真AI候補。
     // ★テナント別フラグ（settings feature.inventory・既定OFF＝ベータ）で出し分ける（2026-09-19 レビュー決定）。

@@ -47,10 +47,10 @@
           <select v-model="siteId" class="select" data-testid="tool-site-select">
             <option value="">{{ $t('common.select') }}</option>
             <optgroup v-if="todaySites.length" :label="$t('tools.siteToday')">
-              <option v-for="s in todaySites" :key="`t-${s.id}`" :value="s.id">{{ s.name }}</option>
+              <option v-for="s in todaySites" :key="`t-${s.id}`" :value="s.id">{{ $nm(s.name) }}</option>
             </optgroup>
             <optgroup :label="$t('tools.siteAll')">
-              <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+              <option v-for="s in sites" :key="s.id" :value="s.id">{{ $nm(s.name) }}</option>
             </optgroup>
             <optgroup v-if="bases.length" :label="$t('tools.bases')">
               <option v-for="b in bases" :key="`b-${b.id}`" :value="b.id">{{ b.name }}</option>

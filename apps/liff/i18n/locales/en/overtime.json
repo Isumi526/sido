@@ -52,5 +52,24 @@
   "cancelConfirm": "Cancel the request for {date}?",
   "errorAlreadyRequested": "You have already requested overtime for today. To change it, use \"Edit / add\" (until 16:00).",
   "cancelLocked": "The 16:00 deadline has passed, so this request can no longer be cancelled. Please wait for approval.",
-  "cancelLockedShort": "Locked after deadline"
+  "cancelLockedShort": "Locked after deadline",
+  "statusHeading": "{label} ({today} {date})",
+  "decisionNoteLine": "{label}: {note}",
+  "targetSitesLabel": "Sites (choose one or more; the person in charge is notified)",
+  "selectedCount": "{n} selected",
+  "siteSearchPlaceholder": "Filter by site name",
+  "noSites": "No sites",
+  "noSiteMatch": "No sites match \"{q}\"",
+  "minutes": "{n} min",
+  "breakMinutesShort": "Break {n} min",
+  "pastDateOption": "{date} ({weekday})",
+  "weekdays": {
+    "sun": "Sun",
+    "mon": "Mon",
+    "tue": "Tue",
+    "wed": "Wed",
+    "thu": "Thu",
+    "fri": "Fri",
+    "sat": "Sat"
+  }
 }
