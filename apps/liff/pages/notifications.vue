@@ -72,6 +72,27 @@
               <span class="material-symbols-rounded notif-chev">chevron_right</span>
             </NuxtLink>
           </li>
+          <!-- 承認待ちの打刻修正・距離超過（承認者だけ・自分の申請は出さない）: 処理されるまで残る（A-4・2026-10-02） -->
+          <li v-if="punchApprovalCount > 0">
+            <NuxtLink class="notif tappable todo" to="/approvals/punch" data-testid="todo-approval-punch">
+              <span class="material-symbols-rounded notif-icon kind-todo">edit_calendar</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoPunchApprovalTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoPunchApprovalText', { n: punchApprovalCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">chevron_right</span>
+            </NuxtLink>
+          </li>
+          <li v-if="distanceApprovalCount > 0">
+            <NuxtLink class="notif tappable todo" to="/approvals/distance" data-testid="todo-approval-distance">
+              <span class="material-symbols-rounded notif-icon kind-todo">route</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoDistanceApprovalTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoDistanceApprovalText', { n: distanceApprovalCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">chevron_right</span>
+            </NuxtLink>
+          </li>
           <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
           <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
             <button class="notif tappable todo" :data-testid="`punch-todo-${t.kind}`" @click="router.push('/checkin')">

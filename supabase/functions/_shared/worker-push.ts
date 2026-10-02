@@ -13,6 +13,7 @@
 import webpush from 'https://esm.sh/web-push@3.6.7'
 import { APPROVER_ROLES } from './caller-identity.ts'
 import { reportApprovalsFor } from './report-approval.ts'
+import { distancePendingItems } from './distance-approval.ts'
 
 const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY')  ?? ''
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
@@ -34,29 +35,52 @@ export type WorkerPush = {
 
 export type PushResult = { sent: number; pruned: number; targets: number; skipped?: string }
 
-/** 承認待ちの残業申請の数（承認者に出す分・自分の申請は数えない） */
-export async function overtimePendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+/** 今も承認者か（在籍中・APPROVER_ROLES）。残業・打刻修正・距離超過の「やること」に出す条件 */
+async function isActiveApprover(svc: any, accountId: string, workerId: string): Promise<boolean> {
   const { data: me } = await svc.from('workers').select('permission_role, active')
     .eq('id', workerId).eq('account_id', accountId).maybeSingle()
-  if (!me?.active || !APPROVER_ROLES.includes((me.permission_role ?? '') as string)) return 0
+  return !!me?.active && APPROVER_ROLES.includes((me.permission_role ?? '') as string)
+}
+
+/** 承認待ちの残業申請の数（承認者に出す分・自分の申請は数えない） */
+export async function overtimePendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  if (!await isActiveApprover(svc, accountId, workerId)) return 0
   const { count } = await svc.from('overtime_requests').select('id', { count: 'exact', head: true })
     .eq('account_id', accountId).eq('status', 'pending').neq('worker_id', workerId)
   return count ?? 0
 }
 
-/** 承認待ちの内訳（やることの行ごと）。日報は「今この人が承認/却下できるもの」（_shared/report-approval.ts・A-3） */
-export async function approvalPendingBreakdown(svc: any, accountId: string, workerId: string): Promise<{ overtime: number; report: number }> {
-  const [overtime, reports] = await Promise.all([
-    overtimePendingCount(svc, accountId, workerId),
-    reportApprovalsFor(svc, accountId, workerId).then(r => r.length).catch(() => 0),
-  ])
-  return { overtime, report: reports }
+/** 承認待ちの打刻修正の数（A-4。attendance-log の correction-approval-list と同じ規則） */
+export async function punchPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  if (!await isActiveApprover(svc, accountId, workerId)) return 0
+  const { count } = await svc.from('attendance_correction_requests').select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending').neq('worker_id', workerId)
+  return count ?? 0
 }
 
-/** 承認待ちの数（残業申請＋日報）。やることの数・アイコンの数字に入る */
+/** 承認待ちの距離超過の数（A-4。report-distance の approval-list と同じ規則・_shared/distance-approval.ts） */
+export async function distancePendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  if (!await isActiveApprover(svc, accountId, workerId)) return 0
+  return (await distancePendingItems(svc, accountId, workerId)).length
+}
+
+export type ApprovalBreakdown = { overtime: number; report: number; punch: number; distance: number }
+
+/** 承認待ちの内訳（やることの行ごと）。日報は「今この人が承認/却下できるもの」（_shared/report-approval.ts・A-3） */
+export async function approvalPendingBreakdown(svc: any, accountId: string, workerId: string): Promise<ApprovalBreakdown> {
+  const [overtime, reports, punch, distance] = await Promise.all([
+    overtimePendingCount(svc, accountId, workerId),
+    reportApprovalsFor(svc, accountId, workerId).then(r => r.length).catch(() => 0),
+    punchPendingCount(svc, accountId, workerId).catch(() => 0),
+    distancePendingCount(svc, accountId, workerId).catch(() => 0),
+  ])
+  return { overtime, report: reports, punch, distance }
+}
+
+/** 承認待ちの数（残業申請＋日報＋打刻修正＋距離超過）。やることの数・アイコンの数字に入る */
 export async function approvalPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
   const b = await approvalPendingBreakdown(svc, accountId, workerId)
-  return b.overtime + b.report
+  return b.overtime + b.report + b.punch + b.distance
 }
 
 /** アイコンの数字: 未読のお知らせ（site_document は「やること」側で数えるので除く）＋承認待ち */

@@ -25,5 +25,9 @@
   "todoApprovalTitle": "承認待ちの残業申請",
   "todoApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。",
   "todoReportApprovalTitle": "承認待ちの日報",
-  "todoReportApprovalText": "{n}件あります。押すと、このアプリで中身を確認して承認・差し戻しできます。"
+  "todoReportApprovalText": "{n}件あります。押すと、このアプリで中身を確認して承認・差し戻しできます。",
+  "todoPunchApprovalTitle": "承認待ちの打刻修正",
+  "todoPunchApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。",
+  "todoDistanceApprovalTitle": "承認待ちの距離超過",
+  "todoDistanceApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。"
 }

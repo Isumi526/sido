@@ -1,0 +1,39 @@
+{
+  "title": "Distance approvals",
+  "detailTitle": "Distance over default",
+  "hint": "Daily reports where a vehicle's distance exceeds the site's default. Tap one to check, then approve or reject.",
+  "empty": "No distance requests waiting for approval.",
+  "back": "Back to list",
+  "site": "Site",
+  "vehicle": "Vehicle",
+  "fieldLabel": "Type",
+  "km": "Distance",
+  "reason": "Reason",
+  "requestedAt": "Requested",
+  "field": {
+    "distanceKm": "Gasoline",
+    "dieselKm": "Diesel"
+  },
+  "kmChange": "Default {from}km → Requested {to}km",
+  "kmNote": "Approving sets this report's distance to the requested value and includes it in fuel costs (currently counted at the default).",
+  "none": "This report has no distance requests.",
+  "approve": "Approve",
+  "reject": "Reject",
+  "mine": "You can't approve requests on your own report. Ask another approver.",
+  "rejectHint": "If rejected, the distance stays at the default {km}km.",
+  "rejectConfirm": "Reject",
+  "cancel": "Cancel",
+  "approvedDone": "Approved.",
+  "rejectedDone": "Rejected.",
+  "decidedApproved": "Done: approved by {who} at {when}",
+  "decidedRejected": "Done: rejected by {who} at {when}",
+  "someone": "another approver",
+  "err": {
+    "unauthorized": "Please sign in again.",
+    "APPROVE_FORBIDDEN": "You don't have permission to approve.",
+    "SELF_APPROVAL_FORBIDDEN": "You can't approve requests on your own report. Ask another approver.",
+    "not_found": "This report was not found.",
+    "conflict": "The report was edited meanwhile. It has been reloaded — please check again.",
+    "other": "Something went wrong. Please try again later."
+  }
+}

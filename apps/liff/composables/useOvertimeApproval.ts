@@ -44,11 +44,14 @@ export class ApprovalError extends Error {
   constructor(public code: string) { super(code) }
 }
 
-export function useOvertimeApproval() {
+/**
+ * 承認系 EF を Supabase のログイン（JWT）で呼ぶ。残業・打刻修正・距離超過の承認で共用（A-4 で切り出し）。
+ * エラーは ApprovalError(code)。
+ */
+export function useApprovalPost() {
   const config = useRuntimeConfig()
   const supabase = useSupabase()
-
-  async function post(fn: string, body: Record<string, unknown>): Promise<any> {
+  return async function post(fn: string, body: Record<string, unknown>): Promise<any> {
     const anonKey = config.public.supabaseAnonKey as string
     const { data: { session } } = await supabase.auth.getSession()
     // ★承認は Supabase のログイン（JWT）だけ。無ければサーバーに送っても 401 なので先に止める
@@ -62,6 +65,10 @@ export function useOvertimeApproval() {
     if (!res.ok || json?.ok === false) throw new ApprovalError(json?.error ?? `http_${res.status}`)
     return json
   }
+}
+
+export function useOvertimeApproval() {
+  const post = useApprovalPost()
 
   async function list(): Promise<OvertimeApprovalItem[]> {
     return ((await post('attendance-log', { action: 'overtime-approval-list' })).items ?? []) as OvertimeApprovalItem[]

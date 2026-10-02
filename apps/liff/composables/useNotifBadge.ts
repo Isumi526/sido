@@ -44,12 +44,18 @@ export const todoCount = computed(() => pendingDocCount.value + punchTodoItems.v
 //  数は EF push-settings の badge（承認者でなければ 0・自分の申請は数えない・日報は自分が今押せるものだけ）。
 export const overtimeApprovalCount = ref(0)
 export const reportApprovalCount = ref(0)
-export const approvalPendingCount = computed(() => overtimeApprovalCount.value + reportApprovalCount.value)
+// 打刻修正（/approvals/punch）・距離超過（/approvals/distance）は A-4（2026-10-02）
+export const punchApprovalCount = ref(0)
+export const distanceApprovalCount = ref(0)
+export const approvalPendingCount = computed(() =>
+  overtimeApprovalCount.value + reportApprovalCount.value + punchApprovalCount.value + distanceApprovalCount.value)
 export async function refreshApprovalBadge(): Promise<void> {
   const push = useWorkerPush()   // ★await より前に解決する（注入が切れないように）
   const b = await push.approvalBreakdown()
   overtimeApprovalCount.value = b.overtime
   reportApprovalCount.value = b.report
+  punchApprovalCount.value = b.punch
+  distanceApprovalCount.value = b.distance
 }
 
 // ── 打刻催促の「やること」（A-3・2026-09-20）──
