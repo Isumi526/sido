@@ -282,5 +282,23 @@
     "entertainment": "接待交際費",
     "meeting": "会議費",
     "misc": "雑費"
-  }
+  },
+  "formModeClassic": "いつもの画面",
+  "formModeSteps": "1つずつ入力",
+  "stepCount": "{n} / {total}",
+  "stepBack": "戻る",
+  "stepNext": "次へ",
+  "stepTitle_basic": "日付と稼働",
+  "stepLead_basic": "今日の稼働を選んでください。",
+  "stepLead_site": "入った現場と、作業区分・時間・協力業者を入れてください。ほかの現場にも入った日は、下のボタンで現場を追加します。",
+  "stepTitle_expense": "経費",
+  "stepLead_expense": "今日、経費はありましたか？ある時は、現場ごとに「あり」にして入れてください。",
+  "stepTitle_garbage": "ゴミ",
+  "stepLead_garbage": "ゴミを出しましたか？出した現場は「あり」にして、量と写真を入れてください。",
+  "stepTitle_pickup": "引き上げ材料",
+  "stepLead_pickup": "現場から持ち帰った材料はありましたか？",
+  "stepTitle_note": "備考",
+  "stepLead_note": "伝えたいことがあれば書いてください（無ければそのまま次へ）。",
+  "stepTitle_confirm": "確認して送信",
+  "stepLead_confirm": "内容を確かめて送信してください。直す時は「戻る」で戻れます。"
 }

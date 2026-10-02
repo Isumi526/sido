@@ -92,6 +92,17 @@ Deno.serve(async (req) => {
     return json({ ok: true })
   }
 
+  // 日報のフォームの既定（従来／ステップ式・2026-10-02 R-3）。最後に選んだ方を次回の既定に（端末を跨いで効かせる）。
+  //  ★作業員の好みの置き場をここにまとめる（通知の種類のオン/オフと同じ「本人の設定」）。自分の users 行だけ
+  if (body.action === 'report-form-set') {
+    const mode = body.mode === 'steps' || body.mode === 'classic' ? body.mode : ''
+    if (!mode) return json({ ok: false, error: 'bad_mode' }, 400)
+    const { error } = await svc.from('users').update({ report_form_pref: mode })
+      .eq('worker_id', workerId).eq('account_id', accountId)
+    if (error) { console.error('[push-settings] report-form-set failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+    return json({ ok: true })
+  }
+
   if (body.action === 'prefs-set') {
     const kind = typeof body.kind === 'string' ? body.kind : ''
     if (!(PUSH_KINDS as readonly string[]).includes(kind)) return json({ ok: false, error: 'bad_kind' }, 400)

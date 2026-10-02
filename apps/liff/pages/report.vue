@@ -52,7 +52,19 @@
       </div>
 
       <!-- フォーム -->
-      <form v-else @submit.prevent="handleSubmit" class="form">
+      <form v-else ref="formRef" @submit.prevent="handleSubmit" class="form">
+
+        <!-- 従来／ステップ式の切り替え（R-3・2026-10-02）。最後に選んだ方が次回の既定 -->
+        <div class="form-mode-tabs" role="tablist" data-testid="form-mode-tabs">
+          <button type="button" role="tab" class="form-mode-tab" :class="{ on: !isSteps }" :aria-selected="!isSteps" data-testid="form-mode-classic" @click="setFormMode('classic')">{{ $t('report.formModeClassic') }}</button>
+          <button type="button" role="tab" class="form-mode-tab" :class="{ on: isSteps }" :aria-selected="isSteps" data-testid="form-mode-steps" @click="setFormMode('steps')">{{ $t('report.formModeSteps') }}</button>
+        </div>
+        <div v-if="isSteps" class="step-head" data-testid="step-head">
+          <div class="step-progress"><span class="step-progress-bar" :style="{ width: `${((stepIndex + 1) / steps.length) * 100}%` }" /></div>
+          <div class="step-count">{{ $t('report.stepCount', { n: stepIndex + 1, total: steps.length }) }}</div>
+          <h2 class="step-title" data-testid="step-title">{{ stepTitle }}</h2>
+          <p v-if="stepLead" class="step-lead">{{ stepLead }}</p>
+        </div>
 
         <!-- 簡易入力モード（?mode=simple）: 経費欄を畳んで現場・稼働・主要項目だけ表示 -->
         <div v-if="simpleMode" class="pending-banner" data-testid="simple-mode-banner">
@@ -74,6 +86,7 @@
           <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
         </div>
 
+        <div v-show="inStep('basic')" data-step="basic">
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ dateWithWeekday }}</div>
@@ -224,11 +237,12 @@
             {{ $t('report.expenseOpen') }}
           </button>
         </template>
+        </div><!-- /data-step=basic -->
 
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
-          v-show="isWorkingStr === 'working' || showSitesWhenOff"
+          v-show="(isWorkingStr === 'working' || showSitesWhenOff) && siteBlockVisible(si)"
           :key="si"
           :num="String(si + 3).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
@@ -243,6 +257,9 @@
             >{{ $t('report.removeBtn') }}</button>
           </template>
 
+          <!-- ステップ式の経費・ゴミ・引き上げでは、どの現場の分かを名前で示す -->
+          <p v-if="isSteps && !currentStep.startsWith('site-')" class="step-site-name" :data-testid="`step-site-name-${si}`">{{ $nm(siteDisplayName(site.siteName, site.customSiteName)) }}</p>
+          <div v-show="partVisible('site', si)" :data-step="`site-${si}`">
           <!-- 元請け業者（任意・現場プルダウンの絞り込みに使う）
                ★2026-08-17 に「現場を選べば元請けは決まる」として一度廃止したが、
                 現場が多い会社では元請けで先に絞れないと目的の現場を探すのが大変で、
@@ -389,11 +406,12 @@
               <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
             </select>
           </Field>
+          </div><!-- /現場の選択（data-step=site） -->
 
           <!-- ── 稼働（現場選択後に表示） ── -->
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <!-- 稼働の入力は稼働ありの日だけ。有給/稼働なしの日は経費だけ入れる。 -->
-          <div v-if="isWorkingStr === 'working'" class="sub-section">
+          <div v-if="isWorkingStr === 'working'" v-show="partVisible('site', si)" :data-step="`site-${si}`" class="sub-section">
 
             <!-- 作業員（ログインユーザー固定） -->
             <Field>
@@ -533,6 +551,7 @@
             </Field>
           </div>
 
+          <div v-show="partVisible('expense', si)" data-step="expense">
           <!-- 経費有無（簡易モードでは経費入力を丈ごと畳む） -->
           <Field v-if="!simpleMode" :label="$t('report.expense')">
             <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
@@ -795,7 +814,7 @@
             </Field>
 
             <!-- ゴミ -->
-            <Field :label="$t('report.garbage')">
+            <Field v-if="!isSteps" :label="$t('report.garbage')">
               <select :value="siteUsage[si].garbage" class="select select--usage" @change="(e) => setUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
@@ -820,7 +839,7 @@
             </Field>
             <!-- 引き上げ材料（2026-09-18 亥角）: ゴミと同じ並びで あり/なし → 写真を複数枚。
                  現場から持ち帰った材料の記録＝在庫の入荷の材料にもなる（在庫①で接続） -->
-            <Field :label="$t('report.pickup')">
+            <Field v-if="!isSteps" :label="$t('report.pickup')">
               <select :value="siteUsage[si].pickup" class="select select--usage" data-testid="pickup-usage" @change="(e) => setUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
@@ -884,9 +903,45 @@
             </Field>
 
           </div>
+          </div><!-- /data-step=expense -->
+
+          <!-- ステップ式のゴミ・引き上げ（従来と同じ項目・同じ保存先。経費の「あり」に連動させる） -->
+          <template v-if="isSteps && !simpleMode">
+            <Field v-show="partVisible('garbage', si)" data-step="garbage" :label="$t('report.garbage')">
+              <select :value="siteUsage[si].garbage" class="select select--usage" :data-testid="`step-garbage-usage-${si}`" @change="(e) => setStepUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].garbage === 'あり'">
+                <div class="expense-grid mt6">
+                  <ExpenseField v-model="site.expenses.garbageFactoryM3" :label="$t('report.garbageWood')" decimal />
+                  <ExpenseField v-model="site.expenses.garbageSiteM3"    :label="$t('report.garbageMixed')" decimal />
+                </div>
+                <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
+                  <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" @remove-file="(p) => site.expenses.garbagePhotos?.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handleGarbagePhoto(si, e)" />
+                </div>
+              </template>
+            </Field>
+            <Field v-show="partVisible('pickup', si)" data-step="pickup" :label="$t('report.pickup')">
+              <select :value="siteUsage[si].pickup" class="select select--usage" :data-testid="`step-pickup-usage-${si}`" @change="(e) => setStepUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].pickup === 'あり'">
+                <input v-model="site.expenses.pickupNote" type="text" class="input mt6" :placeholder="$t('report.pickupNotePlaceholder')" :data-testid="`step-pickup-note-${si}`" />
+                <div class="mt8">
+                  <label class="hours-label">{{ $t('report.pickupPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.pickupPhotos" @remove-file="(p) => site.expenses.pickupPhotos?.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handlePickupPhoto(si, e)" />
+                </div>
+              </template>
+            </Field>
+          </template>
 
           <!-- 現場備考 -->
-          <Field :label="$t('report.siteNote')">
+          <Field v-show="partVisible('site', si)" :data-step="`site-${si}`" :label="$t('report.siteNote')">
             <textarea
               v-model="site.siteNote"
               class="textarea"
@@ -901,8 +956,8 @@
 
         <!-- 現場追加 -->
         <button
-          v-if="isWorkingStr === 'working' || showSitesWhenOff"
-          type="button" class="btn-add-site" @click="addSite()"
+          v-if="(isWorkingStr === 'working' || showSitesWhenOff) && (!isSteps || currentStep === `site-${report.form.value.sites.length - 1}`)"
+          type="button" class="btn-add-site" data-testid="add-site" @click="onAddSite()"
         >
           <span class="btn-add-site__icon">＋</span>
           <span class="btn-add-site__text">
@@ -919,6 +974,8 @@
               いつの申請なのかが追えなくなるため（登録は新規送信の時だけ）。 -->
         <PersonalExpenseRows
           v-if="showPersonalExpense"
+          v-show="inStep('expense')"
+          data-step="expense"
           :rows="pe.rows.value"
           :usage="pe.usage.value"
           :offices="pe.offices.value"
@@ -929,7 +986,7 @@
         />
 
         <!-- 備考 -->
-        <FormSection num="✎" :title="$t('report.noteSection')">
+        <FormSection v-show="inStep('note')" data-step="note" num="✎" :title="$t('report.noteSection')">
           <textarea
             v-model="report.form.value.note"
             class="textarea"
@@ -944,6 +1001,7 @@
           <span class="material-symbols-rounded banner-icon">warning</span>{{ report.error.value || editError }}
         </div>
 
+        <div v-show="inStep('confirm')" data-step="confirm">
         <!-- 送信前の最終確認テーブル（新規・編集とも全体をプレビュー） -->
         <div class="preview-block">
           <div class="preview-label">
@@ -1023,12 +1081,19 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" @click="onSubmitClick" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
           <span v-else>{{ isEditMode ? $t('report.updateReportBtn') : $t('report.submitReportBtn') }}</span>
         </button>
+        </div><!-- /data-step=confirm -->
+
+        <!-- ステップ式の戻る・次へ -->
+        <div v-if="isSteps" class="step-nav" data-testid="step-nav">
+          <button type="button" class="step-back" :disabled="stepIndex === 0" data-testid="step-back" @click="goStep(stepIndex - 1)">{{ $t('report.stepBack') }}</button>
+          <button v-if="currentStep !== 'confirm'" type="button" class="step-next" data-testid="step-next" @click="nextStep">{{ $t('report.stepNext') }}</button>
+        </div>
 
       </form>
     </main>
@@ -1899,6 +1964,111 @@ const createUsage = (): UsageState => ({
 })
 
 const siteUsage = ref<UsageState[]>([createUsage()])
+
+// ── ステップ式の第2フォーム（R-3・2026-10-02 設計「日報の入力と承認画面」）──────────────
+//  ★入力欄と保存処理は従来フォームと同じもの（同じ report.form・siteUsage・handleSubmit）を使い、
+//   1画面に1つずつ見せるだけ＝どちらで送っても同じ日報になる（受け入れ条件）。
+//   各入力欄の束に data-step を付け、今のステップの束だけを出す。従来フォームの表示は何も変えない。
+//  ★ゴミ・引き上げは従来は経費の中にある。ステップ式では専用のステップに同じ項目を出し、
+//   「あり」にしたらその現場の経費も「あり」にする（読み込み時に経費の有無を決める規則と揃える）。
+//  ★どちらで送ったかは効果測定（report_steps_submitted）に残す。最後に選んだ方を次回の既定にする
+//   （端末に残し、サーバ（users.report_form_pref）にも残して端末を跨いで効かせる）。
+type FormMode = 'classic' | 'steps'
+const FORM_MODE_KEY = 'report_form_mode'
+function readFormMode(): FormMode {
+  try { return localStorage.getItem(FORM_MODE_KEY) === 'steps' ? 'steps' : 'classic' } catch { return 'classic' }
+}
+const formMode = ref<FormMode>(readFormMode())
+const isSteps = computed(() => formMode.value === 'steps')
+const formRef = ref<HTMLFormElement | null>(null)
+const stepIndex = ref(0)
+function setFormMode(m: FormMode, opts: { persist?: boolean } = {}) {
+  if (formMode.value !== m) stepIndex.value = 0
+  formMode.value = m
+  try { localStorage.setItem(FORM_MODE_KEY, m) } catch { /* noop */ }
+  if (opts.persist !== false) void saveFormModePref(m)
+}
+/** サーバの既定（端末を跨ぐ）。読めた時だけ使う。端末の選択が無い時の既定にする */
+watch(() => (selfUser.value as any)?.report_form_pref, (pref) => {
+  let local: string | null = null
+  try { local = localStorage.getItem(FORM_MODE_KEY) } catch { /* noop */ }
+  if (!local && (pref === 'steps' || pref === 'classic')) setFormMode(pref, { persist: false })
+}, { immediate: true })
+async function saveFormModePref(m: FormMode) {
+  try { await useWorkerPush().setReportFormPref(m) } catch { /* best-effort */ }
+}
+
+const STEP_SITE_PARTS = ['expense', 'garbage', 'pickup'] as const
+const sitesShownInForm = computed(() => isWorkingStr.value === 'working' || showSitesWhenOff.value)
+const steps = computed<string[]>(() => {
+  const list = ['basic']
+  if (sitesShownInForm.value) {
+    report.form.value.sites.forEach((_, i) => list.push(`site-${i}`))
+    if (!simpleMode.value) list.push(...STEP_SITE_PARTS)
+  } else if (showPersonalExpense.value) {
+    list.push('expense')
+  }
+  list.push('note', 'confirm')
+  return list
+})
+const currentStep = computed(() => steps.value[Math.min(stepIndex.value, steps.value.length - 1)] ?? 'basic')
+function inStep(key: string): boolean { return !isSteps.value || currentStep.value === key }
+function partVisible(part: 'site' | 'expense' | 'garbage' | 'pickup', si: number): boolean {
+  if (!isSteps.value) return true
+  return part === 'site' ? currentStep.value === `site-${si}` : currentStep.value === part
+}
+function siteBlockVisible(si: number): boolean {
+  if (!isSteps.value) return true
+  if (currentStep.value === `site-${si}`) return true
+  return (STEP_SITE_PARTS as readonly string[]).includes(currentStep.value) && isSiteChosen(report.form.value.sites[si])
+}
+const stepTitle = computed(() => {
+  const k = currentStep.value
+  if (k.startsWith('site-')) {
+    const n = Number(k.slice(5)) + 1
+    return report.form.value.sites.length > 1 ? t('report.siteNumbered', { n }) : t('report.site')
+  }
+  return t(`report.stepTitle_${k}`)
+})
+const stepLead = computed(() => {
+  const k = currentStep.value
+  return k.startsWith('site-') ? t('report.stepLead_site') : t(`report.stepLead_${k}`)
+})
+function goStep(i: number) {
+  stepIndex.value = Math.max(0, Math.min(i, steps.value.length - 1))
+  nextTick(() => window.scrollTo({ top: 0 }))
+}
+/** 次へ。今のステップの必須欄が埋まっていなければ進まない（ブラウザの必須の案内を出す） */
+function nextStep() {
+  const box = formRef.value?.querySelectorAll<HTMLElement>(`[data-step="${currentStep.value}"]`) ?? []
+  for (const el of Array.from(box)) {
+    const bad = el.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(':invalid')
+    if (bad) { bad.reportValidity(); return }
+  }
+  goStep(stepIndex.value + 1)
+}
+function onAddSite() {
+  addSite()
+  if (isSteps.value) nextTick(() => goStep(steps.value.indexOf(`site-${report.form.value.sites.length - 1}`)))
+}
+/** ステップ式で送信を押した時、隠れているステップに未入力の必須欄があれば、そのステップへ戻して示す
+ *  （隠れた必須欄があるとブラウザは何も言わずに送信を止めてしまう） */
+function onSubmitClick(e: MouseEvent) {
+  if (!isSteps.value || !formRef.value || formRef.value.checkValidity()) return
+  e.preventDefault()
+  const bad = formRef.value.querySelector<HTMLElement>(':invalid')
+  const key = bad?.closest('[data-step]')?.getAttribute('data-step')
+  const i = key ? steps.value.indexOf(key) : -1
+  if (i >= 0) goStep(i)
+  nextTick(() => (bad as HTMLInputElement | null)?.reportValidity?.())
+}
+/** ステップ式のゴミ・引き上げ。「あり」にしたらその現場の経費も「あり」にする */
+function setStepUsage(si: number, key: 'garbage' | 'pickup', value: string) {
+  if (value === 'あり' && siteUsage.value[si].expense !== 'あり') siteUsage.value[si].expense = 'あり'
+  setUsage(si, key, value)
+}
+// 現場の数が減って今のステップが無くなった時は、範囲内に戻す
+watch(() => steps.value.length, (n) => { if (stepIndex.value > n - 1) stepIndex.value = n - 1 })
 
 // 保存済み経費データから あり/なし 状態を復元する
 function reconstructExpenseUsage(exp: any): UsageState {
@@ -3513,6 +3683,7 @@ async function handleSubmit() {
 
       editSubmitted.value = true
       useUsageLog().logFeatureUsage('report_edited')   // 効果測定（ベストエフォート）
+      if (isSteps.value) useUsageLog().logFeatureUsage('report_steps_submitted')
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
@@ -3587,7 +3758,11 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
-  if (!report.error.value) useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
+  if (!report.error.value) {
+    useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
+    // どちらのフォームで送ったか（R-3・使用率を見て将来一本化するかを決める材料）
+    if (isSteps.value) useUsageLog().logFeatureUsage('report_steps_submitted')
+  }
 
   // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
   //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
@@ -4795,4 +4970,21 @@ html, body {
 .overage-hint { margin: 4px 0 8px; font-size: 12px; color: #7c2d12; line-height: 1.5; }
 .overage-status { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 .sub-search { margin-bottom: 6px; }
+
+/* ── ステップ式（R-3）── */
+.form-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #eef1f4; border-radius: 12px; padding: 4px; margin-bottom: 12px; }
+.form-mode-tab { height: 40px; border: none; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; }
+.form-mode-tab.on { background: #fff; color: #06a050; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.step-head { margin: 4px 0 12px; }
+.step-progress { height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+.step-progress-bar { display: block; height: 100%; background: #06C755; transition: width .2s; }
+.step-count { margin-top: 8px; font-size: 12px; color: #6b7280; }
+.step-title { margin: 2px 0 0; font-size: 20px; font-weight: 800; color: #1f2937; }
+.step-lead { margin: 4px 0 0; font-size: 14px; line-height: 1.6; color: #4b5563; }
+.step-site-name { margin: 0 0 8px; font-size: 15px; font-weight: 800; color: #1f2937; }
+.step-nav { position: sticky; bottom: 0; z-index: 5; display: grid; grid-template-columns: 1fr 2fr; gap: 8px; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #f2f2f7 80%, rgba(242,242,247,0)); }
+.step-back, .step-next { height: 48px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.step-back { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+.step-back:disabled { opacity: .4; cursor: default; }
+.step-next { background: #06C755; border: none; color: #fff; }
 </style>
