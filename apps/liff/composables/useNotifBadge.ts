@@ -47,8 +47,12 @@ export const reportApprovalCount = ref(0)
 // 打刻修正（/approvals/punch）・距離超過（/approvals/distance）は A-4（2026-10-02）
 export const punchApprovalCount = ref(0)
 export const distanceApprovalCount = ref(0)
+// 経費精算の申請・在庫の確認待ち（管理者・役員/経理だけ・処理は管理画面＝/admin/...）は A-5（2026-10-02）
+export const expenseApplicationCount = ref(0)
+export const inventoryConfirmCount = ref(0)
 export const approvalPendingCount = computed(() =>
-  overtimeApprovalCount.value + reportApprovalCount.value + punchApprovalCount.value + distanceApprovalCount.value)
+  overtimeApprovalCount.value + reportApprovalCount.value + punchApprovalCount.value + distanceApprovalCount.value
+  + expenseApplicationCount.value + inventoryConfirmCount.value)
 export async function refreshApprovalBadge(): Promise<void> {
   const push = useWorkerPush()   // ★await より前に解決する（注入が切れないように）
   const b = await push.approvalBreakdown()
@@ -56,6 +60,8 @@ export async function refreshApprovalBadge(): Promise<void> {
   reportApprovalCount.value = b.report
   punchApprovalCount.value = b.punch
   distanceApprovalCount.value = b.distance
+  expenseApplicationCount.value = b.expense
+  inventoryConfirmCount.value = b.inventory
 }
 
 // ── 打刻催促の「やること」（A-3・2026-09-20）──

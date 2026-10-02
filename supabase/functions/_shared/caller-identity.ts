@@ -108,6 +108,12 @@ export async function resolveCaller(
 /** 承認を行える権限。apps/admin/src/lib/auth.ts の ADMIN_ALLOWED_ROLES と揃える。 */
 export const APPROVER_ROLES = ['owner', 'admin', 'office', 'site_manager']
 
+/**
+ * 経営・経理の画面（経費精算・在庫など）を扱える権限＝管理者・役員/経理。
+ * apps/admin/src/lib/auth.ts の canViewManagementPages（admin/office）と揃える。owner は worker 行の無い純オーナー。
+ */
+export const MANAGEMENT_ROLES = ['owner', 'admin', 'office']
+
 export type Approver = {
   accountId: string
   authUserId: string

@@ -11,7 +11,8 @@
 //   アプリのベルと同じ考え方: 未読のお知らせ＋（承認者なら）承認待ちの残業申請。アプリを開けば正確な数に直る。
 // ============================================================
 import webpush from 'https://esm.sh/web-push@3.6.7'
-import { APPROVER_ROLES } from './caller-identity.ts'
+import { APPROVER_ROLES, MANAGEMENT_ROLES } from './caller-identity.ts'
+import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from './features-registry.gen.ts'
 import { reportApprovalsFor } from './report-approval.ts'
 import { distancePendingItems } from './distance-approval.ts'
 
@@ -64,23 +65,56 @@ export async function distancePendingCount(svc: any, accountId: string, workerId
   return (await distancePendingItems(svc, accountId, workerId)).length
 }
 
-export type ApprovalBreakdown = { overtime: number; report: number; punch: number; distance: number }
+/** 今も管理者・役員/経理か（在籍中・MANAGEMENT_ROLES）。経費精算・在庫の確認待ちを「やること」に出す条件（A-5） */
+async function isActiveManager(svc: any, accountId: string, workerId: string): Promise<boolean> {
+  const { data: me } = await svc.from('workers').select('permission_role, active')
+    .eq('id', workerId).eq('account_id', accountId).maybeSingle()
+  return !!me?.active && MANAGEMENT_ROLES.includes((me.permission_role ?? '') as string)
+}
+
+/**
+ * 申請中の経費精算の数（A-5・処理は管理画面）。管理画面の経費精算の「要対応」と同じ status='申請中'（全期間）。
+ * ★自分の申請も数える（管理画面も除いていない。経理の人が自分の精算を処理することもある）。
+ */
+export async function expensePendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  if (!await isActiveManager(svc, accountId, workerId)) return 0
+  const { count } = await svc.from('expense_settlements').select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', '申請中')
+  return count ?? 0
+}
+
+/**
+ * 在庫の確認待ちの数（A-5・処理は管理画面の在庫）。在庫の機能を使っている会社だけ。
+ * ★確認役が「本人」に戻っていても、残っている確認待ちは管理画面に出る（inventory.vue と同じ）ので、確認役では絞らない。
+ */
+export async function inventoryPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  if (!await isActiveManager(svc, accountId, workerId)) return 0
+  const { data: rows } = await svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
+  if (!resolveFeatureFlags((rows ?? []) as { key: string; value: string | null }[]).inventory) return 0
+  const { count } = await svc.from('inventory_pending_moves').select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending')
+  return count ?? 0
+}
+
+export type ApprovalBreakdown = { overtime: number; report: number; punch: number; distance: number; expense: number; inventory: number }
 
 /** 承認待ちの内訳（やることの行ごと）。日報は「今この人が承認/却下できるもの」（_shared/report-approval.ts・A-3） */
 export async function approvalPendingBreakdown(svc: any, accountId: string, workerId: string): Promise<ApprovalBreakdown> {
-  const [overtime, reports, punch, distance] = await Promise.all([
+  const [overtime, reports, punch, distance, expense, inventory] = await Promise.all([
     overtimePendingCount(svc, accountId, workerId),
     reportApprovalsFor(svc, accountId, workerId).then(r => r.length).catch(() => 0),
     punchPendingCount(svc, accountId, workerId).catch(() => 0),
     distancePendingCount(svc, accountId, workerId).catch(() => 0),
+    expensePendingCount(svc, accountId, workerId).catch(() => 0),
+    inventoryPendingCount(svc, accountId, workerId).catch(() => 0),
   ])
-  return { overtime, report: reports, punch, distance }
+  return { overtime, report: reports, punch, distance, expense, inventory }
 }
 
-/** 承認待ちの数（残業申請＋日報＋打刻修正＋距離超過）。やることの数・アイコンの数字に入る */
+/** 承認待ちの数（残業申請＋日報＋打刻修正＋距離超過＋経費精算＋在庫の確認待ち）。やることの数・アイコンの数字に入る */
 export async function approvalPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
   const b = await approvalPendingBreakdown(svc, accountId, workerId)
-  return b.overtime + b.report + b.punch + b.distance
+  return b.overtime + b.report + b.punch + b.distance + b.expense + b.inventory
 }
 
 /** アイコンの数字: 未読のお知らせ（site_document は「やること」側で数えるので除く）＋承認待ち */
@@ -137,6 +171,13 @@ export async function pushToWorkers(svc: any, accountId: string, workerIds: stri
     console.error('[worker-push]', e)
     return { sent: 0, pruned: 0, targets: 0, skipped: 'error' }
   }
+}
+
+/** 今も管理者・役員/経理（在籍中・MANAGEMENT_ROLES）の作業員。申請者本人は除ける（A-5） */
+export async function managerWorkerIds(svc: any, accountId: string, excludeWorkerId?: string | null): Promise<string[]> {
+  const { data } = await svc.from('workers').select('id')
+    .eq('account_id', accountId).eq('active', true).in('permission_role', MANAGEMENT_ROLES)
+  return ((data ?? []) as any[]).map(w => w.id as string).filter(id => !excludeWorkerId || id !== excludeWorkerId)
 }
 
 /** 今も承認者（在籍中・APPROVER_ROLES）の作業員。申請者本人は除ける */

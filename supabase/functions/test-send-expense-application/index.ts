@@ -15,6 +15,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { pushExpenseApplication } from '../_shared/management-push.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
@@ -99,6 +100,14 @@ Deno.serve(async (req) => {
     // 二重送信防止
     if (settlement.notified_at) return json({ success: true, skipped: 'already_notified' })
 
+    // ★管理者・役員/経理の端末へ「経費精算の申請が届きました」（A-5・2026-10-02・best-effort）。
+    //  メールの宛先が未設定の会社でも届くよう、メールより先に送る。処理は管理画面（押すと同じドメインの管理画面が開く）。
+    //  二重送信は上の notified_at で止まる（メールが送れた申請は再送しない）。
+    const pushRes = settlement.status === '申請中'
+      ? await pushExpenseApplication(supabase, account.id, { settlementId: settlement.id, targetUserId, periodKey: period_key })
+      : null
+    const push = pushRes ? { targets: pushRes.targets, sent: pushRes.sent, skipped: pushRes.skipped ?? null } : null
+
     // 通知先メール
     const { data: setting } = await supabase
       .from('settings').select('value')
@@ -108,7 +117,7 @@ Deno.serve(async (req) => {
       try { emails = JSON.parse(setting.value) }
       catch { emails = String(setting.value).split(',').map((s: string) => s.trim()).filter(Boolean) }
     }
-    if (!emails.length) return json({ success: true, skipped: 'no_recipients' })
+    if (!emails.length) return json({ success: true, skipped: 'no_recipients', push })
 
     // 作業員名
     const { data: user } = await supabase
@@ -136,7 +145,7 @@ Deno.serve(async (req) => {
 
     if (!RESEND_API_KEY) {
       console.warn('[test-send-expense-application] RESEND_API_KEY 未設定 → 送信スキップ')
-      return json({ success: true, skipped: 'no_api_key' })
+      return json({ success: true, skipped: 'no_api_key', push })
     }
 
     // Resend 送信
@@ -165,7 +174,7 @@ Deno.serve(async (req) => {
       .update({ notified_at: new Date().toISOString() })
       .eq('id', settlement.id)
 
-    return json({ success: true, sent_to: emails.length })
+    return json({ success: true, sent_to: emails.length, push })
   } catch (e) {
     console.error('[test-send-expense-application]', e)
     return json({ error: String(e) }, 500)

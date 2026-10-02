@@ -29,5 +29,9 @@
   "todoPunchApprovalTitle": "承認待ちの打刻修正",
   "todoPunchApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。",
   "todoDistanceApprovalTitle": "承認待ちの距離超過",
-  "todoDistanceApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。"
+  "todoDistanceApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。",
+  "todoExpenseApplyTitle": "経費精算の申請",
+  "todoExpenseApplyText": "{n}件あります。押すと管理画面の経費精算が開きます（処理は管理画面で）。",
+  "todoInventoryConfirmTitle": "在庫の確認待ち",
+  "todoInventoryConfirmText": "{n}件あります。押すと管理画面の在庫が開きます（確認は管理画面で）。"
 }
