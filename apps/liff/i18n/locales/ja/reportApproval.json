@@ -44,7 +44,7 @@
   "notYourTurn": "この申請は、あなたの承認の対象ではありません（もう片方の承認者を待っています）。",
   "rejectTitle": "差し戻す",
   "rejectHint": "理由は作業員のお知らせに届きます。作業員は直して出し直せます。",
-  "rejectNoteLabel": "差し戻す理由（必須）",
+  "rejectNoteLabel": "差し戻す理由",
   "rejectNotePlaceholder": "例：現場名が違います。正しい現場にして出し直してください。",
   "rejectConfirm": "差し戻す",
   "cancel": "やめる",

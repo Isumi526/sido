@@ -44,7 +44,7 @@
   "notYourTurn": "This request isn't yours to approve (waiting for the other approver).",
   "rejectTitle": "Send back",
   "rejectHint": "The reason is sent to the worker's notifications. They can fix it and resubmit.",
-  "rejectNoteLabel": "Reason (required)",
+  "rejectNoteLabel": "Reason",
   "rejectNotePlaceholder": "e.g. Wrong site. Please choose the correct site and resubmit.",
   "rejectConfirm": "Send back",
   "cancel": "Cancel",

@@ -83,7 +83,7 @@
             <section v-else class="card" data-testid="rpa-reject-form">
               <div class="card-title">{{ $t('reportApproval.rejectTitle') }}</div>
               <p class="note">{{ $t('reportApproval.rejectHint') }}</p>
-              <label class="note-label" for="rpa-reject-note">{{ $t('reportApproval.rejectNoteLabel') }}</label>
+              <label class="note-label" for="rpa-reject-note">{{ $t('reportApproval.rejectNoteLabel') }}<span class="req-mark">{{ $t('common.required') }}</span></label>
               <textarea
                 id="rpa-reject-note" v-model="rejectNote" class="note-input" rows="3" maxlength="1000"
                 :placeholder="$t('reportApproval.rejectNotePlaceholder')" data-testid="rpa-reject-note"
@@ -233,4 +233,5 @@ onMounted(load)
 .decided.approved { background: #ecfdf5; color: #047857; }
 .decided.rejected { background: #fef2f2; color: #b91c1c; }
 .decided-note { display: block; font-weight: 400; margin-top: 2px; }
+.req-mark { margin-left: 6px; color: var(--danger, #dc2626); font-size: 11px; font-weight: 700; }   /* Field.vue の .required と同じ見た目 */
 </style>

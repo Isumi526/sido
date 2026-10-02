@@ -170,7 +170,7 @@
 
           <!-- 同行者名は接待交際費のみ必須（税務上「誰と行ったか」の記録） -->
           <template v-if="needsCompanions">
-            <label class="pe-label">{{ $t('personalExpense.companionsRequiredLabel') }}</label>
+            <label class="pe-label">{{ $t('personalExpense.companionsRequiredLabel') }}<span class="req-mark">{{ $t('common.required') }}</span></label>
             <input v-model="form.companions" type="text" class="pe-input" :placeholder="$t('personalExpense.companionsPlaceholderFull')" data-testid="pe-companions" />
           </template>
 
@@ -763,4 +763,5 @@ onMounted(async () => {
 .pe-kind-opt input { margin: 0; }
 .pe-kind-hint { flex-basis: 100%; font-size: 11px; color: #64748b; line-height: 1.5; }
 .pe-kind-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; }
+.req-mark { margin-left: 6px; color: var(--danger, #dc2626); font-size: 11px; font-weight: 700; }   /* Field.vue の .required と同じ見た目 */
 </style>

@@ -44,7 +44,7 @@ test.afterAll(async () => {
 })
 
 test('★新規現場は 住所・工期（開始）が無いと保存できず、入れると保存→再読込で工期が残る', async ({ page }) => {
-  await page.goto('/sites', { waitUntil: 'networkidle' })
+  await page.goto('/sites?status=all', { waitUntil: 'networkidle' })   // 最初のタブは「着工」（2026-09-28）。作った現場は受注なので「すべて」で見る
   await page.getByRole('button', { name: '＋ 追加' }).click()
   const modal = page.locator('.modal-overlay').filter({ hasText: '現場を追加' })
   await expect(modal).toBeVisible()
@@ -76,7 +76,7 @@ test('★新規現場は 住所・工期（開始）が無いと保存できず�
 })
 
 test('既存現場（工期・住所なし）は警告だけで保存できる（他の項目の編集を止めない）', async ({ page }) => {
-  await page.goto('/sites', { waitUntil: 'networkidle' })
+  await page.goto('/sites?status=all', { waitUntil: 'networkidle' })   // 最初のタブは「着工」（2026-09-28）。作った現場は受注なので「すべて」で見る
   await page.getByPlaceholder(/検索/).fill(SITE_OLD)
   const row = page.locator('tr', { hasText: SITE_OLD })
   await expect(row.getByTestId(`site-period-${oldSiteId}`)).toContainText('工期未設定')
@@ -93,7 +93,7 @@ test('既存現場（工期・住所なし）は警告だけで保存できる�
 
 test('★工程表PDFを現場に添付でき、工程管理の月ビューで地方ごとに工期の帯とクリップが出る（工期未入力は「工期未定」）', async ({ page }) => {
   // 工程表を添付（既存現場は即アップロード）
-  await page.goto('/sites', { waitUntil: 'networkidle' })
+  await page.goto('/sites?status=all', { waitUntil: 'networkidle' })   // 最初のタブは「着工」（2026-09-28）。作った現場は受注なので「すべて」で見る
   await page.getByPlaceholder(/検索/).fill(SITE_OSAKA)
   await page.locator('tr', { hasText: SITE_OSAKA }).getByRole('button', { name: '編集' }).click()
   const modal = page.locator('.modal-overlay').filter({ hasText: '現場を編集' })

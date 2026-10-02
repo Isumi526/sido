@@ -46,7 +46,7 @@
   "groupOffices": "オフィス・工場",
   "groupWorked": "この日に出勤した現場",
   "groupAll": "すべての現場",
-  "companionsRequiredLabel": "同行者名（必須）",
+  "companionsRequiredLabel": "同行者名",
   "companionsPlaceholderFull": "同行者名（例: ○○商事 田中様）",
   "payer": "支払元",
   "payerCompany": "会社からの預金、又はカードでの支払い",
