@@ -322,5 +322,6 @@
   "bulkAddManual": "＋ 領収書なしで追加",
   "bulkApply": "まとめて入れる（{n}件）",
   "bulkApplied": "{n}件を入れました。下の現場ごとの経費で確かめてください。",
-  "pickupToInventory": "在庫にも引き上げとして登録する（別の画面が開きます）"
+  "pickupToInventory": "在庫にも引き上げとして登録する（別の画面が開きます）",
+  "bulkInvoice": "登録番号（無ければ「なし」）"
 }

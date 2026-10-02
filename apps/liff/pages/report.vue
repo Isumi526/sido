@@ -282,7 +282,7 @@
               <label class="hours-label">{{ $t('report.bulkIssuedDate') }}
                 <input v-model="c.issuedDate" type="date" class="input mt4" :data-testid="`bulk-issued-${ci}`" />
               </label>
-              <label class="hours-label">{{ $t('report.registrationNumberPlaceholder') }}
+              <label class="hours-label">{{ $t('report.bulkInvoice') }}
                 <input v-model="c.registrationNumber" type="text" class="input mt4" @keydown.enter.prevent />
               </label>
             </div>
@@ -5195,7 +5195,9 @@ html, body {
 .bulk-card-name { flex: 1; font-size: 13px; font-weight: 700; color: #374151; word-break: break-all; }
 .bulk-reading { font-size: 12px; color: #6b7280; }
 .bulk-failed { font-size: 12px; color: #b91c1c; }
-.bulk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bulk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.bulk-grid > label { display: flex; flex-direction: column; min-width: 0; margin: 0; }
+.bulk-grid .select, .bulk-grid .input { width: 100%; box-sizing: border-box; min-width: 0; }
 .bulk-note { margin: 0; font-size: 12px; line-height: 1.6; color: #6b7280; align-self: end; }
 .bulk-warn { margin: 6px 0 0; font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 6px; padding: 6px 8px; }
 .bulk-actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 12px; }

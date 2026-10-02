@@ -322,5 +322,6 @@
   "bulkAddManual": "+ Add without receipt",
   "bulkApply": "Add all ({n})",
   "bulkApplied": "Added {n}. Please check them in the expenses for each site below.",
-  "pickupToInventory": "Also register it in inventory as brought back (opens another screen)"
+  "pickupToInventory": "Also register it in inventory as brought back (opens another screen)",
+  "bulkInvoice": "Invoice no. (\"none\" if none)"
 }
