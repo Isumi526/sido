@@ -1020,7 +1020,7 @@ async function resolveReportLink(target: Target | null) {
 .step-reopen { margin-left: auto; font-size: 12px; color: #15803d; text-decoration: underline; }
 
 .step-ready { font-size: 15px; font-weight: 600; color: #374151; line-height: 1.7; padding: 8px 2px; }
-.step-ready-note { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: #b45309; }
+.step-ready-note { display: block; margin-top: 6px; font-size: 12px; font-weight: 400; color: #6b7280; }
 
 /* 後追い入力・修正申請は畳んで置く。打刻の本筋ではないので既定では見せない */
 .more-actions { margin-top: 18px; }
