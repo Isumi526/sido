@@ -22,6 +22,7 @@ export const USAGE_FEATURES = {
   subcontractor_invoice_registered: { label: '協力業者の請求書登録', group: '見積・発注' },
   // 日報
   report_submitted:               { label: '日報送信',               group: '日報' },
+  report_steps_submitted:         { label: '日報送信（1つずつ入力）', group: '日報' },
   report_edited:                  { label: '日報編集',               group: '日報' },
   report_history_viewed:          { label: '日報履歴の閲覧',         group: '日報' },
   report_edit_decided:            { label: '日報編集の承認/却下',    group: '日報' },

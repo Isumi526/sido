@@ -52,7 +52,19 @@
       </div>
 
       <!-- フォーム -->
-      <form v-else @submit.prevent="handleSubmit" class="form">
+      <form v-else ref="formRef" @submit.prevent="handleSubmit" class="form">
+
+        <!-- 従来／ステップ式の切り替え（R-3・2026-10-02）。最後に選んだ方が次回の既定 -->
+        <div class="form-mode-tabs" role="tablist" data-testid="form-mode-tabs">
+          <button type="button" role="tab" class="form-mode-tab" :class="{ on: !isSteps }" :aria-selected="!isSteps" data-testid="form-mode-classic" @click="setFormMode('classic')">{{ $t('report.formModeClassic') }}</button>
+          <button type="button" role="tab" class="form-mode-tab" :class="{ on: isSteps }" :aria-selected="isSteps" data-testid="form-mode-steps" @click="setFormMode('steps')">{{ $t('report.formModeSteps') }}</button>
+        </div>
+        <div v-if="isSteps" class="step-head" data-testid="step-head">
+          <div class="step-progress"><span class="step-progress-bar" :style="{ width: `${((stepIndex + 1) / steps.length) * 100}%` }" /></div>
+          <div class="step-count">{{ $t('report.stepCount', { n: stepIndex + 1, total: steps.length }) }}</div>
+          <h2 class="step-title" data-testid="step-title">{{ stepTitle }}</h2>
+          <p v-if="stepLead" class="step-lead">{{ stepLead }}</p>
+        </div>
 
         <!-- 簡易入力モード（?mode=simple）: 経費欄を畳んで現場・稼働・主要項目だけ表示 -->
         <div v-if="simpleMode" class="pending-banner" data-testid="simple-mode-banner">
@@ -74,6 +86,7 @@
           <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
         </div>
 
+        <div v-show="inStep('basic')" data-step="basic">
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ dateWithWeekday }}</div>
@@ -224,11 +237,75 @@
             {{ $t('report.expenseOpen') }}
           </button>
         </template>
+        </div><!-- /data-step=basic -->
+
+        <!-- ステップ式の経費: 領収書をまとめて入れる（R-3b）。
+             1枚＝1カードで読み取り→人が確かめて、種類と紐付け先（今日の現場が先頭・ほかの現場・個人経費）を選ぶ→
+             「まとめて入れる」で、従来と同じ明細（駐車場・高速・電車・宿泊・ガソリン・その他）に入る。
+             入れた明細は、この下の現場ごとの経費で確かめて直せる。 -->
+        <section v-if="isSteps && !simpleMode" v-show="inStep('expense')" data-step="expense" class="bulk-receipts" data-testid="bulk-receipts">
+          <h3 class="bulk-title">{{ $t('report.bulkTitle') }}</h3>
+          <p class="bulk-hint">{{ $t('report.bulkHint') }}</p>
+          <input type="file" accept="image/*,.pdf" multiple class="input" data-testid="bulk-receipt-input" @change="onBulkFiles" />
+          <div v-for="(c, ci) in bulkCards" :key="c.id" class="bulk-card" :data-testid="`bulk-card-${ci}`">
+            <div class="bulk-card-head">
+              <span class="bulk-card-name">{{ c.file?.name ?? $t('report.bulkNoReceipt') }}</span>
+              <span v-if="c.status === 'reading'" class="bulk-reading">{{ $t('report.analyzing') }}</span>
+              <span v-else-if="c.status === 'failed'" class="bulk-failed">{{ $t('report.bulkReadFailed') }}</span>
+              <button type="button" class="btn-icon-sm" :data-testid="`bulk-remove-${ci}`" @click="bulkCards.splice(ci, 1)">✕</button>
+            </div>
+            <div class="bulk-grid">
+              <label class="hours-label">{{ $t('report.bulkKind') }}
+                <select v-model="c.kind" class="select mt4" :data-testid="`bulk-kind-${ci}`">
+                  <option v-for="k in BULK_KINDS" :key="k" :value="k">{{ $t(`report.bulkKind_${k}`) }}</option>
+                </select>
+              </label>
+              <label v-if="c.kind !== 'gasoline'" class="hours-label">{{ $t('report.bulkTarget') }}
+                <select v-model="c.target" class="select mt4" :data-testid="`bulk-target-${ci}`">
+                  <optgroup v-if="bulkTodaySites.length" :label="$t('report.bulkTargetToday')">
+                    <option v-for="o in bulkTodaySites" :key="o.value" :value="o.value">{{ $nm(o.label) }}</option>
+                  </optgroup>
+                  <option v-if="showPersonalExpense" value="personal">{{ $t('report.bulkTargetPersonal') }}</option>
+                  <optgroup v-if="bulkOtherSites.length" :label="$t('report.bulkTargetOther')">
+                    <option v-for="n in bulkOtherSites" :key="n" :value="`new:${n}`">{{ $nm(n) }}</option>
+                  </optgroup>
+                </select>
+              </label>
+              <p v-else class="bulk-note">{{ $t('report.bulkGasNote') }}</p>
+            </div>
+            <input v-model="c.payee" type="text" class="input mt6" :placeholder="$t('report.payeePlaceholder')" :data-testid="`bulk-payee-${ci}`" @keydown.enter.prevent />
+            <div class="lineitems-row mt6">
+              <input v-model="c.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
+              <ExpenseField v-model="c.yen" v-model:tategae="c.tategae" with-tategae :label="$t('report.amount')" />
+            </div>
+            <div class="bulk-grid mt6">
+              <label class="hours-label">{{ $t('report.bulkIssuedDate') }}
+                <input v-model="c.issuedDate" type="date" class="input mt4" :data-testid="`bulk-issued-${ci}`" />
+              </label>
+              <label class="hours-label">{{ $t('report.bulkInvoice') }}
+                <input v-model="c.registrationNumber" type="text" class="input mt4" @keydown.enter.prevent />
+              </label>
+            </div>
+            <p v-if="c.issuedDate && c.issuedDate !== report.form.value.date" class="bulk-warn" :data-testid="`bulk-date-warn-${ci}`">{{ $t('report.bulkDateWarn', { date: c.issuedDate }) }}</p>
+            <select v-if="c.kind === 'other' || c.target === 'personal'" v-model="c.account" class="select mt6" :data-testid="`bulk-account-${ci}`">
+              <option value="">{{ $t('report.accountAuto', { name: accountLabel('消耗品費') }) }}</option>
+              <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ accountLabel(a) }}</option>
+            </select>
+            <input v-if="(c.kind === 'other' || c.target === 'personal') && needsCompanions({ account: c.account })" v-model="c.companions" type="text" class="input mt6" :placeholder="$t('report.companionsPlaceholder')" @keydown.enter.prevent />
+            <input v-if="c.kind === 'gasoline'" v-model.number="c.liters" type="number" inputmode="decimal" step="0.01" min="0" class="input mt6" :placeholder="$t('report.litersPlaceholder')" @keydown.enter.prevent />
+            <input v-if="!c.file" v-model="c.noReceiptReason" type="text" class="input mt6" :placeholder="$t('report.noReceiptReasonPlaceholder')" :data-testid="`bulk-no-receipt-${ci}`" @keydown.enter.prevent />
+          </div>
+          <div class="bulk-actions">
+            <button type="button" class="btn-ghost-sm" data-testid="bulk-add-manual" @click="addBulkCard(null)">{{ $t('report.bulkAddManual') }}</button>
+            <button type="button" class="bulk-apply" :disabled="!bulkCards.length || bulkCards.some(c => c.status === 'reading')" data-testid="bulk-apply" @click="applyBulkCards">{{ $t('report.bulkApply', { n: bulkCards.length }) }}</button>
+          </div>
+          <p v-if="bulkMsg" class="bulk-msg" data-testid="bulk-msg">{{ bulkMsg }}</p>
+        </section>
 
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
-          v-show="isWorkingStr === 'working' || showSitesWhenOff"
+          v-show="(isWorkingStr === 'working' || showSitesWhenOff) && siteBlockVisible(si)"
           :key="si"
           :num="String(si + 3).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
@@ -243,6 +320,9 @@
             >{{ $t('report.removeBtn') }}</button>
           </template>
 
+          <!-- ステップ式の経費・ゴミ・引き上げでは、どの現場の分かを名前で示す -->
+          <p v-if="isSteps && !currentStep.startsWith('site-')" class="step-site-name" :data-testid="`step-site-name-${si}`">{{ $nm(siteDisplayName(site.siteName, site.customSiteName)) }}</p>
+          <div v-show="partVisible('site', si)" :data-step="`site-${si}`">
           <!-- 元請け業者（任意・現場プルダウンの絞り込みに使う）
                ★2026-08-17 に「現場を選べば元請けは決まる」として一度廃止したが、
                 現場が多い会社では元請けで先に絞れないと目的の現場を探すのが大変で、
@@ -389,11 +469,12 @@
               <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ $nm(c.name) }}</option>
             </select>
           </Field>
+          </div><!-- /現場の選択（data-step=site） -->
 
           <!-- ── 稼働（現場選択後に表示） ── -->
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <!-- 稼働の入力は稼働ありの日だけ。有給/稼働なしの日は経費だけ入れる。 -->
-          <div v-if="isWorkingStr === 'working'" class="sub-section">
+          <div v-if="isWorkingStr === 'working'" v-show="partVisible('site', si)" :data-step="`site-${si}`" class="sub-section">
 
             <!-- 作業員（ログインユーザー固定） -->
             <Field>
@@ -533,6 +614,7 @@
             </Field>
           </div>
 
+          <div v-show="partVisible('expense', si)" data-step="expense">
           <!-- 経費有無（簡易モードでは経費入力を丈ごと畳む） -->
           <Field v-if="!simpleMode" :label="$t('report.expense')">
             <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
@@ -795,7 +877,7 @@
             </Field>
 
             <!-- ゴミ -->
-            <Field :label="$t('report.garbage')">
+            <Field v-if="!isSteps" :label="$t('report.garbage')">
               <select :value="siteUsage[si].garbage" class="select select--usage" @change="(e) => setUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
@@ -820,7 +902,7 @@
             </Field>
             <!-- 引き上げ材料（2026-09-18 亥角）: ゴミと同じ並びで あり/なし → 写真を複数枚。
                  現場から持ち帰った材料の記録＝在庫の入荷の材料にもなる（在庫①で接続） -->
-            <Field :label="$t('report.pickup')">
+            <Field v-if="!isSteps" :label="$t('report.pickup')">
               <select :value="siteUsage[si].pickup" class="select select--usage" data-testid="pickup-usage" @change="(e) => setUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
@@ -884,9 +966,47 @@
             </Field>
 
           </div>
+          </div><!-- /data-step=expense -->
+
+          <!-- ステップ式のゴミ・引き上げ（従来と同じ項目・同じ保存先。経費の「あり」に連動させる） -->
+          <template v-if="isSteps && !simpleMode">
+            <Field v-show="partVisible('garbage', si)" data-step="garbage" :label="$t('report.garbage')">
+              <select :value="siteUsage[si].garbage" class="select select--usage" :data-testid="`step-garbage-usage-${si}`" @change="(e) => setStepUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].garbage === 'あり'">
+                <div class="expense-grid mt6">
+                  <ExpenseField v-model="site.expenses.garbageFactoryM3" :label="$t('report.garbageWood')" decimal />
+                  <ExpenseField v-model="site.expenses.garbageSiteM3"    :label="$t('report.garbageMixed')" decimal />
+                </div>
+                <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
+                  <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" @remove-file="(p) => site.expenses.garbagePhotos?.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handleGarbagePhoto(si, e)" />
+                </div>
+              </template>
+            </Field>
+            <Field v-show="partVisible('pickup', si)" data-step="pickup" :label="$t('report.pickup')">
+              <select :value="siteUsage[si].pickup" class="select select--usage" :data-testid="`step-pickup-usage-${si}`" @change="(e) => setStepUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].pickup === 'あり'">
+                <input v-model="site.expenses.pickupNote" type="text" class="input mt6" :placeholder="$t('report.pickupNotePlaceholder')" :data-testid="`step-pickup-note-${si}`" />
+                <div class="mt8">
+                  <label class="hours-label">{{ $t('report.pickupPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.pickupPhotos" @remove-file="(p) => site.expenses.pickupPhotos?.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handlePickupPhoto(si, e)" />
+                </div>
+                <!-- 在庫の機能を使っている会社は、引き上げた材料を在庫にも登録できる（在庫①の引き上げ登録へ） -->
+                <NuxtLink v-if="isLiffFeatureEnabled('inventory')" to="/inventory" class="btn-ghost-sm mt8" :data-testid="`step-pickup-inventory-${si}`">{{ $t('report.pickupToInventory') }}</NuxtLink>
+              </template>
+            </Field>
+          </template>
 
           <!-- 現場備考 -->
-          <Field :label="$t('report.siteNote')">
+          <Field v-show="partVisible('site', si)" :data-step="`site-${si}`" :label="$t('report.siteNote')">
             <textarea
               v-model="site.siteNote"
               class="textarea"
@@ -901,8 +1021,8 @@
 
         <!-- 現場追加 -->
         <button
-          v-if="isWorkingStr === 'working' || showSitesWhenOff"
-          type="button" class="btn-add-site" @click="addSite()"
+          v-if="(isWorkingStr === 'working' || showSitesWhenOff) && (!isSteps || currentStep === `site-${report.form.value.sites.length - 1}`)"
+          type="button" class="btn-add-site" data-testid="add-site" @click="onAddSite()"
         >
           <span class="btn-add-site__icon">＋</span>
           <span class="btn-add-site__text">
@@ -919,6 +1039,8 @@
               いつの申請なのかが追えなくなるため（登録は新規送信の時だけ）。 -->
         <PersonalExpenseRows
           v-if="showPersonalExpense"
+          v-show="inStep('expense')"
+          data-step="expense"
           :rows="pe.rows.value"
           :usage="pe.usage.value"
           :offices="pe.offices.value"
@@ -929,7 +1051,7 @@
         />
 
         <!-- 備考 -->
-        <FormSection num="✎" :title="$t('report.noteSection')">
+        <FormSection v-show="inStep('note')" data-step="note" num="✎" :title="$t('report.noteSection')">
           <textarea
             v-model="report.form.value.note"
             class="textarea"
@@ -944,6 +1066,7 @@
           <span class="material-symbols-rounded banner-icon">warning</span>{{ report.error.value || editError }}
         </div>
 
+        <div v-show="inStep('confirm')" data-step="confirm">
         <!-- 送信前の最終確認テーブル（新規・編集とも全体をプレビュー） -->
         <div class="preview-block">
           <div class="preview-label">
@@ -1023,12 +1146,19 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" @click="onSubmitClick" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
           <span v-else>{{ isEditMode ? $t('report.updateReportBtn') : $t('report.submitReportBtn') }}</span>
         </button>
+        </div><!-- /data-step=confirm -->
+
+        <!-- ステップ式の戻る・次へ -->
+        <div v-if="isSteps" class="step-nav" data-testid="step-nav">
+          <button type="button" class="step-back" :disabled="stepIndex === 0" data-testid="step-back" @click="goStep(stepIndex - 1)">{{ $t('report.stepBack') }}</button>
+          <button v-if="currentStep !== 'confirm'" type="button" class="step-next" data-testid="step-next" @click="nextStep">{{ $t('report.stepNext') }}</button>
+        </div>
 
       </form>
     </main>
@@ -1899,6 +2029,240 @@ const createUsage = (): UsageState => ({
 })
 
 const siteUsage = ref<UsageState[]>([createUsage()])
+
+// ── ステップ式の第2フォーム（R-3・2026-10-02 設計「日報の入力と承認画面」）──────────────
+//  ★入力欄と保存処理は従来フォームと同じもの（同じ report.form・siteUsage・handleSubmit）を使い、
+//   1画面に1つずつ見せるだけ＝どちらで送っても同じ日報になる（受け入れ条件）。
+//   各入力欄の束に data-step を付け、今のステップの束だけを出す。従来フォームの表示は何も変えない。
+//  ★ゴミ・引き上げは従来は経費の中にある。ステップ式では専用のステップに同じ項目を出し、
+//   「あり」にしたらその現場の経費も「あり」にする（読み込み時に経費の有無を決める規則と揃える）。
+//  ★どちらで送ったかは効果測定（report_steps_submitted）に残す。最後に選んだ方を次回の既定にする
+//   （端末に残し、サーバ（users.report_form_pref）にも残して端末を跨いで効かせる）。
+type FormMode = 'classic' | 'steps'
+const FORM_MODE_KEY = 'report_form_mode'
+function readFormMode(): FormMode {
+  try { return localStorage.getItem(FORM_MODE_KEY) === 'steps' ? 'steps' : 'classic' } catch { return 'classic' }
+}
+const formMode = ref<FormMode>(readFormMode())
+const isSteps = computed(() => formMode.value === 'steps')
+const formRef = ref<HTMLFormElement | null>(null)
+const stepIndex = ref(0)
+function setFormMode(m: FormMode, opts: { persist?: boolean } = {}) {
+  if (formMode.value !== m) stepIndex.value = 0
+  formMode.value = m
+  try { localStorage.setItem(FORM_MODE_KEY, m) } catch { /* noop */ }
+  if (opts.persist !== false) void saveFormModePref(m)
+}
+/** サーバの既定（端末を跨ぐ）。読めた時だけ使う。端末の選択が無い時の既定にする */
+watch(() => (selfUser.value as any)?.report_form_pref, (pref) => {
+  let local: string | null = null
+  try { local = localStorage.getItem(FORM_MODE_KEY) } catch { /* noop */ }
+  if (!local && (pref === 'steps' || pref === 'classic')) setFormMode(pref, { persist: false })
+}, { immediate: true })
+async function saveFormModePref(m: FormMode) {
+  try { await useWorkerPush().setReportFormPref(m) } catch { /* best-effort */ }
+}
+
+const STEP_SITE_PARTS = ['expense', 'garbage', 'pickup'] as const
+const sitesShownInForm = computed(() => isWorkingStr.value === 'working' || showSitesWhenOff.value)
+const steps = computed<string[]>(() => {
+  const list = ['basic']
+  if (sitesShownInForm.value) {
+    report.form.value.sites.forEach((_, i) => list.push(`site-${i}`))
+    if (!simpleMode.value) list.push(...STEP_SITE_PARTS)
+  } else if (showPersonalExpense.value) {
+    list.push('expense')
+  }
+  list.push('note', 'confirm')
+  return list
+})
+const currentStep = computed(() => steps.value[Math.min(stepIndex.value, steps.value.length - 1)] ?? 'basic')
+function inStep(key: string): boolean { return !isSteps.value || currentStep.value === key }
+function partVisible(part: 'site' | 'expense' | 'garbage' | 'pickup', si: number): boolean {
+  if (!isSteps.value) return true
+  return part === 'site' ? currentStep.value === `site-${si}` : currentStep.value === part
+}
+function siteBlockVisible(si: number): boolean {
+  if (!isSteps.value) return true
+  if (currentStep.value === `site-${si}`) return true
+  return (STEP_SITE_PARTS as readonly string[]).includes(currentStep.value) && isSiteChosen(report.form.value.sites[si])
+}
+const stepTitle = computed(() => {
+  const k = currentStep.value
+  if (k.startsWith('site-')) {
+    const n = Number(k.slice(5)) + 1
+    return report.form.value.sites.length > 1 ? t('report.siteNumbered', { n }) : t('report.site')
+  }
+  return t(`report.stepTitle_${k}`)
+})
+const stepLead = computed(() => {
+  const k = currentStep.value
+  return k.startsWith('site-') ? t('report.stepLead_site') : t(`report.stepLead_${k}`)
+})
+function goStep(i: number) {
+  stepIndex.value = Math.max(0, Math.min(i, steps.value.length - 1))
+  nextTick(() => window.scrollTo({ top: 0 }))
+}
+/** 次へ。今のステップの必須欄が埋まっていなければ進まない（ブラウザの必須の案内を出す） */
+function nextStep() {
+  const box = formRef.value?.querySelectorAll<HTMLElement>(`[data-step="${currentStep.value}"]`) ?? []
+  for (const el of Array.from(box)) {
+    const bad = el.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(':invalid')
+    if (bad) { bad.reportValidity(); return }
+  }
+  goStep(stepIndex.value + 1)
+}
+function onAddSite() {
+  addSite()
+  if (isSteps.value) nextTick(() => goStep(steps.value.indexOf(`site-${report.form.value.sites.length - 1}`)))
+}
+/** ステップ式で送信を押した時、隠れているステップに未入力の必須欄があれば、そのステップへ戻して示す
+ *  （隠れた必須欄があるとブラウザは何も言わずに送信を止めてしまう） */
+function onSubmitClick(e: MouseEvent) {
+  if (!isSteps.value || !formRef.value || formRef.value.checkValidity()) return
+  e.preventDefault()
+  const bad = formRef.value.querySelector<HTMLElement>(':invalid')
+  const key = bad?.closest('[data-step]')?.getAttribute('data-step')
+  const i = key ? steps.value.indexOf(key) : -1
+  if (i >= 0) goStep(i)
+  nextTick(() => (bad as HTMLInputElement | null)?.reportValidity?.())
+}
+/** ステップ式のゴミ・引き上げ。「あり」にしたらその現場の経費も「あり」にする */
+function setStepUsage(si: number, key: 'garbage' | 'pickup', value: string) {
+  if (value === 'あり' && siteUsage.value[si].expense !== 'あり') siteUsage.value[si].expense = 'あり'
+  setUsage(si, key, value)
+}
+
+// ── ステップ式の経費: 領収書をまとめて入れる（R-3b・2026-10-02）──────────────
+//  ★入れ先は従来と同じ明細（exp.parkings / highways / trains / hotels / others・日報直下の gasolineItems・個人経費の行）。
+//   ここは「1枚＝1カード」で確かめて振り分ける入口で、保存・領収書のアップロード・必須の確認は従来の仕組みのまま。
+//  ★紐付け先は今日の現場が先頭。ほかの現場（遠くで使った経費）も選べ、選ぶとその現場を経費だけのまとまりとして足す
+//   （自分の稼働は「なし」）。個人経費の枠がある人は「個人経費」も選べる。
+type BulkKind = 'parking' | 'highway' | 'train' | 'hotel' | 'gasoline' | 'other'
+const BULK_KINDS: BulkKind[] = ['parking', 'highway', 'train', 'hotel', 'gasoline', 'other']
+type BulkCard = {
+  id: number; file: File | null; status: 'reading' | 'done' | 'failed'
+  kind: BulkKind; target: string
+  payee: string; label: string; yen: number | undefined; tategae: boolean
+  issuedDate: string; registrationNumber: string; account: string; companions: string
+  liters: number | undefined; noReceiptReason: string
+}
+let bulkSeq = 0
+const bulkCards = ref<BulkCard[]>([])
+const bulkMsg = ref('')
+const bulkTodaySites = computed(() => report.form.value.sites
+  .map((s, i) => ({ value: `site:${i}`, label: siteDisplayName(s.siteName, s.customSiteName), chosen: isSiteChosen(s) }))
+  .filter((o) => o.chosen && o.label))
+const bulkOtherSites = computed(() => {
+  const today = new Set(report.form.value.sites.map((s) => s.siteName))
+  return master.siteNames.value.filter((n: string) => n !== '__unset__' && !today.has(n))
+})
+function defaultBulkTarget(): string {
+  return bulkTodaySites.value[0]?.value ?? (showPersonalExpense.value ? 'personal' : (bulkOtherSites.value[0] ? `new:${bulkOtherSites.value[0]}` : ''))
+}
+function addBulkCard(file: File | null): BulkCard {
+  const c: BulkCard = {
+    id: ++bulkSeq, file, status: file ? 'reading' : 'done', kind: 'other', target: defaultBulkTarget(),
+    payee: '', label: '', yen: undefined, tategae: true, issuedDate: '', registrationNumber: '', account: '',
+    companions: '', liters: undefined, noReceiptReason: '',
+  }
+  bulkCards.value.push(c)
+  return bulkCards.value[bulkCards.value.length - 1]
+}
+async function onBulkFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  bulkMsg.value = ''
+  const cards = files.map((f) => addBulkCard(f))
+  // 1枚ずつ順に読む（同時に投げると読み取りの上限に当たる）
+  for (const c of cards) {
+    const r = c.file ? await receipt.analyze(c.file, `bulk-${c.id}`) : null
+    if (!r) { c.status = 'failed'; continue }
+    c.status = 'done'
+    if (r.kind) c.kind = r.kind
+    if (r.storeName) c.payee = r.storeName
+    if (r.label) c.label = r.label
+    if (r.yen) c.yen = r.yen
+    if (r.issuedDate) c.issuedDate = r.issuedDate
+    c.registrationNumber = r.invoiceNumber || 'なし'
+    if (r.account) c.account = r.account
+    if (r.liters) c.liters = r.liters
+  }
+}
+/** その種類の明細の器（従来の「あり」と同じ状態にしてから入れる） */
+function bulkSlot(si: number, kind: Exclude<BulkKind, 'gasoline'>): any {
+  if (siteUsage.value[si].expense !== 'あり') siteUsage.value[si].expense = 'あり'
+  const exp = report.form.value.sites[si].expenses
+  const usageKey = kind === 'parking' || kind === 'highway' ? 'vehicle' : kind
+  if (siteUsage.value[si][usageKey] !== 'あり') setUsage(si, usageKey, 'あり')
+  const listOf = () => ({ parking: exp.parkings, highway: exp.highways, train: exp.trains, hotel: exp.hotels, other: exp.others }[kind]) as any[] | undefined
+  const isEmpty = (it: any) => !it?.yen && !(it?.files?.length) && !(it?.fileUrls?.length) && !it?.label && !it?.payee
+  let list = listOf()
+  let slot = list?.find(isEmpty)
+  if (!slot) {
+    ({ parking: () => report.addParking(si), highway: () => report.addHighway(si), train: () => report.addTrain(si), hotel: () => report.addHotel(si), other: () => report.addOther(si) }[kind])()
+    list = listOf()
+    slot = list?.[list.length - 1]
+  }
+  return slot
+}
+/** 「ほかの現場」を選んだカードは、その現場を経費だけのまとまりとして足す（同じ現場があればそこへ） */
+function bulkSiteIndex(target: string): number {
+  if (target.startsWith('site:')) return Number(target.slice(5))
+  const name = target.slice(4)
+  const found = report.form.value.sites.findIndex((s) => s.siteName === name)
+  if (found >= 0) return found
+  addSite()
+  const si = report.form.value.sites.length - 1
+  report.form.value.sites[si].siteName = name
+  onSiteChange(si)
+  setSelfWorking(si, 'なし')
+  return si
+}
+async function applyBulkCards() {
+  let applied = 0
+  for (const c of bulkCards.value) {
+    if (c.kind === 'gasoline') {
+      if (!gasFueled.value) setGasFueled(true)
+      const items = report.form.value.gasolineItems ?? []
+      let gi = items.findIndex((g) => !g.yen && !g.fileUrls?.length && !g.payee)
+      if (gi < 0) { report.addGasolineItem(); gi = (report.form.value.gasolineItems?.length ?? 1) - 1 }
+      const g = report.form.value.gasolineItems![gi]
+      g.payee = c.payee; g.yen = c.yen; g.tategae = c.tategae; g.registrationNumber = c.registrationNumber
+      if (c.liters) g.liters = c.liters
+      if (!c.file) g.noReceiptReason = c.noReceiptReason
+      if (c.file) await uploadGasItemFile(gi, c.file)
+      applied++
+      continue
+    }
+    if (c.target === 'personal') {
+      pe.add(report.form.value.date)
+      const row = pe.rows.value[pe.rows.value.length - 1]
+      row.amount = c.yen ?? null; row.payee = c.payee; row.note = c.label; row.tategae = c.tategae
+      if (c.account) row.account_category = c.account
+      row.companions = c.companions
+      if (c.file) row.files = [c.file]
+      applied++
+      continue
+    }
+    if (!c.target) continue
+    const si = bulkSiteIndex(c.target)
+    const slot = bulkSlot(si, c.kind)
+    if (!slot) continue
+    if (c.file) slot.files = [c.file]
+    slot.yen = c.yen; slot.payee = c.payee; slot.tategae = c.tategae
+    if (c.label) slot.label = c.label
+    slot.registrationNumber = c.registrationNumber
+    if (c.kind === 'other') { slot.account = c.account; slot.companions = c.companions }
+    if (!c.file) slot.noReceiptReason = c.noReceiptReason
+    applied++
+  }
+  bulkCards.value = []
+  bulkMsg.value = t('report.bulkApplied', { n: applied })
+}
+// 現場の数が減って今のステップが無くなった時は、範囲内に戻す
+watch(() => steps.value.length, (n) => { if (stepIndex.value > n - 1) stepIndex.value = n - 1 })
 
 // 保存済み経費データから あり/なし 状態を復元する
 function reconstructExpenseUsage(exp: any): UsageState {
@@ -3513,6 +3877,7 @@ async function handleSubmit() {
 
       editSubmitted.value = true
       useUsageLog().logFeatureUsage('report_edited')   // 効果測定（ベストエフォート）
+      if (isSteps.value) useUsageLog().logFeatureUsage('report_steps_submitted')
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
@@ -3587,7 +3952,11 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
-  if (!report.error.value) useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
+  if (!report.error.value) {
+    useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
+    // どちらのフォームで送ったか（R-3・使用率を見て将来一本化するかを決める材料）
+    if (isSteps.value) useUsageLog().logFeatureUsage('report_steps_submitted')
+  }
 
   // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
   //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
@@ -3783,8 +4152,12 @@ function setGasFueled(yes: boolean) {
 }
 
 async function onGasItemFile(gi: number, e: Event) {
-  const item = report.form.value.gasolineItems?.[gi]
   const f = (e.target as HTMLInputElement).files?.[0]
+  if (f) await uploadGasItemFile(gi, f)
+}
+/** 給油の領収書を1枚上げて item.fileUrls に入れる（ステップ式のまとめて入れる、からも使う） */
+async function uploadGasItemFile(gi: number, f: File) {
+  const item = report.form.value.gasolineItems?.[gi]
   if (!item || !f) return
   const id = item._id ?? -1
   gasFilesById.value = { ...gasFilesById.value, [id]: [f] }
@@ -4795,4 +5168,41 @@ html, body {
 .overage-hint { margin: 4px 0 8px; font-size: 12px; color: #7c2d12; line-height: 1.5; }
 .overage-status { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 .sub-search { margin-bottom: 6px; }
+
+/* ── ステップ式（R-3）── */
+.form-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #eef1f4; border-radius: 12px; padding: 4px; margin-bottom: 12px; }
+.form-mode-tab { height: 40px; border: none; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; }
+.form-mode-tab.on { background: #fff; color: #06a050; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.step-head { margin: 4px 0 12px; }
+.step-progress { height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+.step-progress-bar { display: block; height: 100%; background: #06C755; transition: width .2s; }
+.step-count { margin-top: 8px; font-size: 12px; color: #6b7280; }
+.step-title { margin: 2px 0 0; font-size: 20px; font-weight: 800; color: #1f2937; }
+.step-lead { margin: 4px 0 0; font-size: 14px; line-height: 1.6; color: #4b5563; }
+.step-site-name { margin: 0 0 8px; font-size: 15px; font-weight: 800; color: #1f2937; }
+.step-nav { position: sticky; bottom: 0; z-index: 5; display: grid; grid-template-columns: 1fr 2fr; gap: 8px; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #f2f2f7 80%, rgba(242,242,247,0)); }
+.step-back, .step-next { height: 48px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.step-back { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+.step-back:disabled { opacity: .4; cursor: default; }
+.step-next { background: #06C755; border: none; color: #fff; }
+
+/* ── ステップ式: 領収書をまとめて入れる（R-3b）── */
+.bulk-receipts { background: #fff; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.bulk-title { margin: 0 0 4px; font-size: 16px; font-weight: 800; color: #1f2937; }
+.bulk-hint { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: #4b5563; }
+.bulk-card { margin-top: 10px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fafafa; }
+.bulk-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.bulk-card-name { flex: 1; font-size: 13px; font-weight: 700; color: #374151; word-break: break-all; }
+.bulk-reading { font-size: 12px; color: #6b7280; }
+.bulk-failed { font-size: 12px; color: #b91c1c; }
+.bulk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.bulk-grid > label { display: flex; flex-direction: column; min-width: 0; margin: 0; }
+.bulk-grid .select, .bulk-grid .input { width: 100%; box-sizing: border-box; min-width: 0; }
+.bulk-note { margin: 0; font-size: 12px; line-height: 1.6; color: #6b7280; align-self: end; }
+.bulk-warn { margin: 6px 0 0; font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 6px; padding: 6px 8px; }
+.bulk-actions { display: flex; flex-direction: column-reverse; gap: 8px; margin-top: 12px; }
+.bulk-actions > button { width: 100%; }
+.bulk-apply { height: 44px; padding: 0 16px; border: none; border-radius: 12px; background: #06C755; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+.bulk-apply:disabled { opacity: .4; cursor: default; }
+.bulk-msg { margin: 8px 0 0; font-size: 13px; color: #15803d; }
 </style>
