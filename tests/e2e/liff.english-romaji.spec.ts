@@ -80,7 +80,7 @@ test('★日本語表示は今のまま（ローマ字にしない）', async ({
 test('★英語表示で、主な画面に日本語の固定文言が残っていない', async ({ page }) => {
   await setLocale(page, 'en')
   // データ（現場名・作業員名・品名など）はここでは見ない。画面の固定文言だけを見る
-  const DATA = /E2E|テスト|確認用|デモ|元請|下請|商社|業者[A-Z]|軽トラ|石膏|ボード|現場[A-Z]|かな_|[枚台]$|カード[①-⑦]/
+  const DATA = /E2E|テスト|確認用|デモ|元請|下請|商社|業者[A-Z]|軽トラ|石膏|ボード|現場[A-Z]|かな_|[枚台]$|カード[①-⑦]|¥\s?[\d,]+/   // ¥つきは経費の明細（名前は人が入れたもの）
   for (const path of ['/', '/checkin', '/history', '/settings', '/overtime', '/rules', '/expense/personal', '/notifications']) {
     await page.goto(path, { waitUntil: 'networkidle' })
     await page.waitForTimeout(800)
