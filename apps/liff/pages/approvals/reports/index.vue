@@ -19,11 +19,11 @@
           <NuxtLink :to="`/approvals/reports/${r.id}`" class="row" data-testid="rpa-row">
             <span class="row-body">
               <span class="row-title">
-                {{ r.applicant_name || '—' }}
+                {{ $nm(r.applicant_name) || '—' }}
                 <span class="row-date">{{ fmtDate(r.report_date) }}</span>
                 <span class="kind-badge" :class="r.kind">{{ $t(`reportApproval.kind.${kindKey(r.kind)}`) }}</span>
               </span>
-              <span v-if="r.site_names.length" class="row-sub">{{ r.site_names.join('、') }}</span>
+              <span v-if="r.site_names.length" class="row-sub">{{ r.site_names.map($nm).join(', ') }}</span>
               <span v-if="r.reason" class="row-reason">{{ r.reason }}</span>
               <!-- 二重承認: もう入っている承認（押した人が「自分の番か」を分かるように） -->
               <span v-if="r.approvals.length" class="row-dual" data-testid="rpa-row-approved">

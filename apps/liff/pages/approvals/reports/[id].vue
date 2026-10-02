@@ -26,12 +26,12 @@
 
         <section class="card">
           <div class="who">
-            <span class="name" data-testid="rpa-name">{{ d.item.applicant_name || '—' }}</span>
+            <span class="name" data-testid="rpa-name">{{ $nm(d.item.applicant_name) || '—' }}</span>
             <span class="kind-badge" :class="d.item.kind">{{ $t(`reportApproval.kind.${kindKey(d.item.kind)}`) }}</span>
           </div>
           <dl class="detail">
             <dt>{{ $t('reportApproval.date') }}</dt><dd data-testid="rpa-date">{{ fmtDate(d.item.report_date) }}</dd>
-            <dt>{{ $t('reportApproval.sites') }}</dt><dd>{{ d.item.site_names.length ? d.item.site_names.join('、') : '—' }}</dd>
+            <dt>{{ $t('reportApproval.sites') }}</dt><dd>{{ d.item.site_names.length ? d.item.site_names.map($nm).join(', ') : '—' }}</dd>
             <dt>{{ $t('reportApproval.reason') }}</dt><dd class="reason" data-testid="rpa-reason">{{ d.item.reason || '—' }}</dd>
             <dt>{{ $t('reportApproval.submittedAt') }}</dt>
             <dd class="muted">
@@ -69,12 +69,12 @@
         <template v-if="d.item.status === 'pending'">
           <p v-if="d.mine" class="info warn" data-testid="rpa-mine">{{ $t('reportApproval.mine') }}</p>
           <p v-else-if="d.approvedByMe" class="info" data-testid="rpa-approved-by-me">
-            {{ $t('reportApproval.approvedByMe', { role: d.item.need.map(roleLabel).join('・') || '—' }) }}
+            {{ $t('reportApproval.approvedByMe', { role: d.item.need.map(roleLabel).join($t('reportApproval.roleSep')) || '—' }) }}
           </p>
           <p v-else-if="!d.item.slot" class="info" data-testid="rpa-not-mine">{{ $t('reportApproval.notYourTurn') }}</p>
           <template v-else>
             <p v-if="willBePartial" class="note partial-note" data-testid="rpa-partial-note">
-              {{ $t('reportApproval.partialNote', { role: otherNeed.map(roleLabel).join('・') }) }}
+              {{ $t('reportApproval.partialNote', { role: otherNeed.map(roleLabel).join($t('reportApproval.roleSep')) }) }}
             </p>
             <div v-if="!rejecting" class="actions">
               <button type="button" class="btn approve" :disabled="busy" data-testid="rpa-approve" @click="onApprove">{{ $t('reportApproval.approve') }}</button>

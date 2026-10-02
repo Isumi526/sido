@@ -12,8 +12,8 @@
           <p v-if="!mine.length" class="empty">{{ $t('tools.myOutToolsEmpty') }}</p>
           <ul v-else class="list">
             <li v-for="t in mine" :key="t.id" class="row" :data-testid="`my-tool-${t.id}`">
-              <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="row-sub">{{ t.sites?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
+              <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">{{ $t('tools.kindParen', { kind: t.kind }) }}</span></NuxtLink>
+              <span class="row-sub">{{ $nm(t.sites?.name) || '—' }}{{ $t('tools.sep') }}{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </section>
@@ -22,8 +22,8 @@
           <p v-if="!others.length" class="empty">{{ $t('tools.allOutToolsEmpty') }}</p>
           <ul v-else class="list">
             <li v-for="t in others" :key="t.id" class="row" :data-testid="`out-tool-${t.id}`">
-              <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="row-sub">{{ t.workers?.name ?? '—' }}・{{ t.sites?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
+              <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">{{ $t('tools.kindParen', { kind: t.kind }) }}</span></NuxtLink>
+              <span class="row-sub">{{ $nm(t.workers?.name) || '—' }}{{ $t('tools.sep') }}{{ $nm(t.sites?.name) || '—' }}{{ $t('tools.sep') }}{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </section>

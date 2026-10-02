@@ -1,0 +1,12 @@
+{
+  "title": "Worker login",
+  "sub": "Log in with your login ID (or email) and password.",
+  "idLabel": "Login ID or email",
+  "idPlaceholder": "ID or email",
+  "passwordLabel": "Password",
+  "submitting": "Logging in…",
+  "submit": "Log in",
+  "errRequired": "Enter your login ID (or email) and password",
+  "errWrong": "Login failed (wrong login ID / email or password)",
+  "errFailed": "Login failed"
+}

@@ -116,5 +116,6 @@
   "locHelpStep2": "Android：Chrome の画面上の鍵の印 → 権限 → 位置情報 を「許可」にする",
   "submitCheckinWithReason": "理由を書いて出勤を記録する",
   "submitCheckoutWithReason": "理由を書いて退勤を記録する",
-  "stepLocationNote": "押すと現在地も一緒に記録します（勤怠の確認のためだけに使います）。"
+  "stepLocationNote": "押すと現在地も一緒に記録します（勤怠の確認のためだけに使います）。",
+  "lateToday": "{md}（今日）"
 }

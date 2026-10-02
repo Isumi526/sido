@@ -130,7 +130,7 @@
               <span class="material-symbols-rounded notif-icon kind-todo">assignment_late</span>
               <span class="notif-body">
                 <span class="notif-title">{{ $t('notifications.todoDocTitle') }}</span>
-                <span class="notif-text">{{ d.siteName }}：{{ d.name || $t('notifications.untitled') }}</span>
+                <span class="notif-text">{{ $nm(d.siteName) }}：{{ d.name || $t('notifications.untitled') }}</span>
                 <span class="notif-time">{{ fmtWhen(d.createdAt) }}</span>
               </span>
               <span class="material-symbols-rounded notif-chev">chevron_right</span>

@@ -86,5 +86,7 @@
   "needManager": "現場責任者",
   "needJoin": "と",
   "expPickup": "引き上げ材料 {detail}",
-  "expPhotos": "写真{n}枚"
+  "expPhotos": "写真{n}枚",
+  "punchRange": "{from} 〜 {to}",
+  "sep": "・"
 }

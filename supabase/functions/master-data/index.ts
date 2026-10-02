@@ -127,6 +127,28 @@ Deno.serve(async (req) => {
     })
   }
 
+  // ── 名前の読み仮名（英語表示でローマ字にする・2026-10-02 II-2）──
+  //  ★日報に残っている現場名（スナップショット）や過去の打刻の作業区分も英語で出すため、
+  //   有効・無効を問わず自テナントの名前を返す。返すのは「名前と読み仮名」だけ。読み仮名の無い名前は返さない。
+  //  ★失注の現場は返さない（作業員さんの画面に出ることが無い・見込み客の名前を広げない）。
+  if (body.action === 'readings') {
+    const [sites, contractors, subs, workers, cats] = await Promise.all([
+      svc.from('sites').select('name, name_kana').eq('account_id', accountId).neq('status', 'lost').not('name_kana', 'is', null),
+      svc.from('contractors').select('name, name_kana').eq('account_id', accountId).not('name_kana', 'is', null),
+      svc.from('subcontractors').select('name, name_kana').eq('account_id', accountId).not('name_kana', 'is', null),
+      svc.from('workers').select('name, name_kana').eq('account_id', accountId).not('name_kana', 'is', null),
+      svc.from('work_categories').select('name, name_kana').eq('account_id', accountId).not('name_kana', 'is', null),
+    ])
+    const readings: [string, string][] = []
+    for (const r of [sites, contractors, subs, workers, cats]) {
+      for (const row of (r.data ?? []) as any[]) {
+        const kana = String(row.name_kana ?? '').trim()
+        if (row.name && kana) readings.push([String(row.name), kana])
+      }
+    }
+    return json({ ok: true, readings })
+  }
+
   // ── 現場の一覧／単体（LIFFの各画面が使う形をこれ1本で賄う）──
   //  ★返す列は LIFF が実際に使うものだけ。責任者ID・工事内容・備考までは業務上必要
   //   （現場情報ページ・チャットの責任者判定）。それ以外は返さない。

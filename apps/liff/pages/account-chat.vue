@@ -2,7 +2,7 @@
   <div class="page" :class="{ 'drag-active': dragActive }"
        @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
        @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
-    <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
+    <div v-if="dragActive" class="drop-overlay">{{ $t('siteChat.dropToAttach') }}</div>
     <AppNav :subtitle="accountName || $t('siteChat.accountRoomTitle')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
@@ -17,9 +17,9 @@
                 class="msg-row"
                 :class="{ mine: item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin }"
               >
-                <div v-if="!(item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin)" class="msg-avatar" :style="{ background: avatarColor(item.data.sender_name) }">{{ initial(item.data.sender_name) }}</div>
+                <div v-if="!(item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin)" class="msg-avatar" :style="{ background: avatarColor(item.data.sender_name) }">{{ initial($nm(item.data.sender_name)) }}</div>
                 <div class="msg-col">
-                  <div v-if="!(item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin)" class="msg-sender">{{ item.data.sender_name }}</div>
+                  <div v-if="!(item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin)" class="msg-sender">{{ $nm(item.data.sender_name) }}</div>
                   <div
                     class="msg-bubble-row"
                     :style="swipingId === item.data.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
@@ -33,14 +33,14 @@
                     <span v-if="item.data.sender_worker_id === myWorkerId && !item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
                     <div class="msg-bubble" data-testid="msg-bubble">
                       <div v-if="item.data.reply_to_sender_name" class="reply-quote">
-                        <div class="reply-quote-sender">{{ item.data.reply_to_sender_name }}</div>
+                        <div class="reply-quote-sender">{{ $nm(item.data.reply_to_sender_name) }}</div>
                         <div class="reply-quote-text">{{ item.data.reply_to_body }}</div>
                       </div>
                       <a v-if="item.data.attachment_url && item.data.attachment_kind === 'image'" :href="item.data.attachment_url" target="_blank" rel="noopener">
                         <img :src="item.data.attachment_url" class="msg-attachment-img" :alt="item.data.attachment_name || ''" @load="onAttachmentLoaded" @error="onAttachmentLoaded" />
                       </a>
                       <a v-else-if="item.data.attachment_url" :href="item.data.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
-                        <span class="material-symbols-rounded">description</span>{{ item.data.attachment_name || 'ファイル' }}
+                        <span class="material-symbols-rounded">description</span>{{ item.data.attachment_name || $t('siteChat.fileFallback') }}
                       </a>
                       <div v-if="item.data.body" class="msg-body">{{ item.data.body }}</div>
                     </div>
@@ -72,7 +72,7 @@
         <div v-if="replyTarget" class="reply-preview" data-testid="reply-preview">
           <div class="reply-preview-bar"></div>
           <div class="reply-preview-body">
-            <div class="reply-preview-sender">{{ replyTarget.sender_name }}</div>
+            <div class="reply-preview-sender">{{ $nm(replyTarget.sender_name) }}</div>
             <div class="reply-preview-text">{{ replyTarget.body }}</div>
           </div>
           <button type="button" class="reply-preview-clear" :aria-label="$t('siteChat.replyClear')" data-testid="reply-preview-clear" @click="replyTarget = null">
@@ -105,6 +105,7 @@
 </template>
 
 <script setup lang="ts">
+import { weekdayShort } from '~/utils/date-label'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -160,7 +161,6 @@ function fmtTimeOnly(iso: string): string {
 }
 
 // LINE風の日付区切りチップ("今日"/"昨日"/"7/17(金)")。メッセージ一覧に日付が変わる箇所へ挿入する。
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 function dayLabel(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
@@ -168,7 +168,7 @@ function dayLabel(iso: string): string {
   const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000)
   if (diffDays === 0) return t('siteChat.today')
   if (diffDays === 1) return t('siteChat.yesterday')
-  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`
+  return `${d.getMonth() + 1}/${d.getDate()}(${weekdayShort(d)})`
 }
 
 type ListItem = { kind: 'sep'; id: string; label: string } | { kind: 'msg'; id: string; data: ChatMessage }
@@ -236,7 +236,7 @@ async function setPendingFile(file: File | null) {
   if (!file) { pendingFile.value = null; return }
   const compressed = await compressImageIfNeeded(file)
   if (compressed.size > MAX_ATTACHMENT_BYTES) {
-    alert(`ファイルサイズが大きすぎます(上限${formatMB(MAX_ATTACHMENT_BYTES)})`)
+    alert(t('siteChat.fileTooLarge', { max: formatMB(MAX_ATTACHMENT_BYTES) }))
     return
   }
   pendingFile.value = compressed

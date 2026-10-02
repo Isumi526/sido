@@ -1,0 +1,40 @@
+{
+  "lead": "These are the daily work rules. Please keep to the deadlines for reports and requests so that records are correct.",
+  "s1": {
+    "title": "Submitting and editing daily reports and expenses",
+    "r1": "{b} (today, yesterday, or the day before yesterday).",
+    "r1b": "You can submit or edit only within the last 3 days, including today",
+    "r2": "Older dates are {b}. This applies to both daily reports and expenses.",
+    "r2b": "locked and cannot be submitted or edited",
+    "r3": "If you must fix a day after the deadline, {b}. If allowed, you can enter that day again.",
+    "r3b": "ask an admin for permission",
+    "r4": "You will get a reminder if you have not submitted. Please submit early."
+  },
+  "s2": {
+    "title": "Overtime requests",
+    "r1": "On days with overtime, {b}.",
+    "r1b": "send an overtime request by 16:00 the same day",
+    "r2": "Use {b} in the menu. Enter the end time you want and the reason, then send it. When an admin approves it, you can enter an end time later than the normal end time for that day only.",
+    "r2b": "\"Overtime Request\"",
+    "r3": "On days without a request, {b}.",
+    "r3b": "you cannot enter times after the normal end time"
+  },
+  "s3": {
+    "title": "Working hours",
+    "r1": "Working hours are {b}.",
+    "r1b": "based on the start and end times set for each site by the person in charge",
+    "r2": "If your hours change for a special reason, such as an early morning delivery, send an overtime request."
+  },
+  "s4": {
+    "title": "Checking in and out",
+    "r1": "{b} at the site. Do not forget.",
+    "r1b": "You must check in when you arrive and check out when you leave",
+    "r2": "To check in or out, {b1}, or use {b2} in the menu.",
+    "r2b1": "scan the site's QR code",
+    "r2b2": "\"Attendance\"",
+    "r3": "If the site has no QR code, {b} to check in or out (you can filter by main contractor or site name).",
+    "r3b": "choose the site in \"Attendance\"",
+    "r4": "At sites with a checklist, check each item when you check in or out."
+  },
+  "note": "* These rules may be updated. Please check this page for the latest version."
+}

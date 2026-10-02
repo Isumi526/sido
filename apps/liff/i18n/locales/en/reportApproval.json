@@ -64,5 +64,6 @@
     "pending_not_found": "This request wasn't found (it may have been withdrawn).",
     "reject_reason_required": "Please enter a reason.",
     "other": "Something went wrong. Please try again later."
-  }
+  },
+  "roleSep": ", "
 }

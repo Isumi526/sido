@@ -52,5 +52,24 @@
   "cancelConfirm": "{date} の申請を取り消します。よろしいですか？",
   "errorAlreadyRequested": "本日分はすでに申請済みです。内容を直したい時は「変更・追加」から出し直してください（締切16:00まで）。",
   "cancelLocked": "締切（16:00）を過ぎたため取り消せません。承認をお待ちください。",
-  "cancelLockedShort": "締切後は取消不可"
+  "cancelLockedShort": "締切後は取消不可",
+  "statusHeading": "{label}（{today} {date}）",
+  "decisionNoteLine": "{label}：{note}",
+  "targetSitesLabel": "対象現場（複数選択可・責任者へ通知）",
+  "selectedCount": "選択 {n}件",
+  "siteSearchPlaceholder": "現場名で絞り込み",
+  "noSites": "現場がありません",
+  "noSiteMatch": "「{q}」に一致する現場がありません",
+  "minutes": "{n}分",
+  "breakMinutesShort": "休憩{n}分",
+  "pastDateOption": "{date}（{weekday}）",
+  "weekdays": {
+    "sun": "日",
+    "mon": "月",
+    "tue": "火",
+    "wed": "水",
+    "thu": "木",
+    "fri": "金",
+    "sat": "土"
+  }
 }

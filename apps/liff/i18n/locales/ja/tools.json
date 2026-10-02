@@ -59,5 +59,7 @@
   "sinceDays": "{n}日前から",
   "indexHint": "持出・返却は道具や保管場所のQRを読んで行います。ここでは今どこにあるかを確認できます。",
   "allOutTools": "他の人が持ち出し中の道具（{n}件）",
-  "allOutToolsEmpty": "持ち出し中の道具はありません"
+  "allOutToolsEmpty": "持ち出し中の道具はありません",
+  "kindParen": "（{kind}）",
+  "sep": "・"
 }

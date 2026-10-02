@@ -18,12 +18,12 @@
       <ul v-else class="list">
         <!-- 既定＝見積中・受注・着工。完了現場は折りたたみ（2026-09-19 A-2・表示マトリクス #17） -->
         <li v-for="r in visibleRows" :key="r.site.id" class="row" :class="{ finished: !DEFAULT_SET.has(r.site.status) }" data-testid="chat-list-row" @click="navigateTo(`/site-chat/${r.site.id}`)">
-          <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial(r.site.name) }}</div>
+          <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial($nm(r.site.name)) }}</div>
           <div class="row-main">
-            <div class="row-name">{{ r.site.name }}<span v-if="r.memberCount" class="row-member-count">({{ r.memberCount }})</span></div>
+            <div class="row-name">{{ $nm(r.site.name) }}<span v-if="r.memberCount" class="row-member-count">({{ r.memberCount }})</span></div>
             <div class="row-sub">
               <template v-if="r.lastMessage">
-                {{ r.lastMessage.sender_name }}:
+                {{ $nm(r.lastMessage.sender_name) }}:
                 <span v-if="r.lastMessage.body">{{ r.lastMessage.body }}</span>
                 <span v-else-if="r.lastMessage.hasAttachment" class="row-attach"><span class="material-symbols-rounded row-attach-icon">attach_file</span>{{ $t('chatsView.attachment') }}</span>
               </template>

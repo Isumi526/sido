@@ -1,4 +1,10 @@
 {
   "uploadFailed": "Failed to upload files. Submission canceled.\n{errors}",
-  "submitFailed": "Submission failed"
+  "submitFailed": "Submission failed",
+  "receiptErrNetwork": "Network error",
+  "receiptErrAuth": "Authentication error",
+  "receiptErrBusy": "The server is busy. Please wait a moment and try again",
+  "receiptErrServer": "Server error",
+  "receiptErrHttp": "Connection error ({status})",
+  "receiptErrFailed": "Could not read the receipt"
 }

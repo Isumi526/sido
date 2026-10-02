@@ -44,7 +44,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="next-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
+            {{ $nm(t.name) }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -118,7 +118,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="next-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
+            {{ $nm(t.name) }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -230,7 +230,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="target-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
+            {{ $nm(t.name) }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -299,7 +299,7 @@
                 v-for="c in ruleCategories" :key="c.id" type="button" class="cat-btn"
                 :class="{ on: c.id === selectedCategoryId }" :disabled="rulesLoading"
                 :data-testid="`rule-category-${c.id}`" @click="pickCategory(c.id)"
-              >{{ c.name }}</button>
+              >{{ $nm(c.name) }}</button>
             </div>
           </div>
           <p v-if="rules.length === 0" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
@@ -399,6 +399,7 @@
 </template>
 
 <script setup lang="ts">
+import { longMdWithWeekday } from '~/utils/date-label'
 // ★2026-08-27 出退勤モデル変更: 現場ごとの打刻をやめ、1日＝最初の出勤・最後の退勤の2回にした。
 //  これに伴い現場選択('select-site')と出勤中の現場フォーカス('checked-in-focus')は不要になり削除。
 //  ルートは /checkin/<siteId> のまま残す（現場に貼ってある旧QRを開いても 404 にしないため。
@@ -450,9 +451,7 @@ const checkedAtLabel = ref('')
 //  「今押したらどの日の記録になるか」が画面から分からなかった（大塚さん指摘・2026-08-27）。
 //  確認画面の見出しに常時表示する。
 const punchDateLabel = computed(() => {
-  const d = new Date()
-  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
-  return `${d.getMonth() + 1}月${d.getDate()}日（${weekdays[d.getDay()]}）`
+  return longMdWithWeekday(new Date())
 })
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')

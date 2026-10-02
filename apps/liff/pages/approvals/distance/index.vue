@@ -19,14 +19,14 @@
           <NuxtLink :to="`/approvals/distance/${r.reportId}`" class="row" data-testid="dsa-row">
             <span class="row-body">
               <span class="row-title">
-                {{ r.workerName || '—' }}
+                {{ $nm(r.workerName) || '—' }}
                 <span class="row-date">{{ fmtDate(r.date) }}</span>
               </span>
               <span class="row-km">
                 {{ $t(`distanceApproval.field.${r.field}`) }}
                 {{ $t('distanceApproval.kmChange', { from: r.overage.defaultKm, to: r.overage.requestedKm }) }}
               </span>
-              <span class="row-sub">{{ [r.siteName, r.vehicleName].filter(Boolean).join('・') }}</span>
+              <span class="row-sub">{{ [$nm(r.siteName), r.vehicleName].filter(Boolean).join($t('distanceApproval.sep')) }}</span>
             </span>
             <span class="material-symbols-rounded chev">chevron_right</span>
           </NuxtLink>

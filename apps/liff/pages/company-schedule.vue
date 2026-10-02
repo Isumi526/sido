@@ -32,7 +32,7 @@
               </div>
               <div v-for="r in (collapsed.has(g.key) ? [] : g.rows)" :key="r.id" class="mv-row" :class="{ optional: r.optional }" :data-testid="`month-site-${r.id}`">
                 <div class="mv-label">
-                  <span class="mv-site">{{ r.name }}</span>
+                  <span class="mv-site">{{ $nm(r.name) }}</span>
                   <span v-if="r.night" class="mv-night">{{ $t('companySchedule.night') }}</span>
                   <button v-for="a in r.schedule_attachments" :key="a.id" type="button" class="mv-clip" :data-testid="`clip-${a.id}`" :title="a.name || 'PDF'" @click="openSchedule(a.id)">
                     <span class="material-symbols-rounded" style="font-size:16px;line-height:1;vertical-align:middle">attach_file</span>
@@ -94,12 +94,16 @@ const mRange = computed(() => {
   if (months > 18) start = new Date(end.getFullYear(), end.getMonth() - 17, 1)
   return { start, end }
 })
+// 月の見出し（ja＝「10月」・en＝「Oct」）
+function monthLabel(d: Date): string {
+  return t('companySchedule.monthLabel', { m: d.getMonth() + 1, mon: d.toLocaleString('en-US', { month: 'short' }) })
+}
 const mMonths = computed(() => {
   const out: { key: string; label: string; left: number; isCurrent: boolean }[] = []
   const cur = monthKey(new Date())
   let left = 0
   for (const d = new Date(mRange.value.start); d <= mRange.value.end; d.setMonth(d.getMonth() + 1)) {
-    out.push({ key: monthKey(d), label: (d.getMonth() === 0 || !out.length) ? `${d.getFullYear()}/${d.getMonth() + 1}` : `${d.getMonth() + 1}月`, left, isCurrent: monthKey(d) === cur })
+    out.push({ key: monthKey(d), label: (d.getMonth() === 0 || !out.length) ? `${d.getFullYear()}/${d.getMonth() + 1}` : monthLabel(d), left, isCurrent: monthKey(d) === cur })
     left += MONTH_W
   }
   return out

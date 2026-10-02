@@ -29,8 +29,8 @@ const inputAttrs = computed(() => {
     <button
       type="button"
       class="pw-eye"
-      :aria-label="show ? 'パスワードを隠す' : 'パスワードを表示'"
-      :title="show ? '隠す' : '表示'"
+      :aria-label="show ? $t('password.hidePassword') : $t('password.showPassword')"
+      :title="show ? $t('common.hide') : $t('common.show')"
       @mousedown.prevent
       @click="show = !show"
     >

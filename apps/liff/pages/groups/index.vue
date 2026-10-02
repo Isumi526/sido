@@ -29,8 +29,8 @@
         <div v-if="expanded.has(group.id)" class="group-body">
           <div class="member-list">
             <div v-for="m in group.members" :key="m.worker_id" class="member-row">
-              <span class="member-avatar">{{ memberName(m).charAt(0) }}</span>
-              <span class="member-name">{{ memberName(m) }}</span>
+              <span class="member-avatar">{{ $nm(memberName(m)).charAt(0) }}</span>
+              <span class="member-name">{{ $nm(memberName(m)) }}</span>
               <span v-if="m.worker_id === myWorkerId" class="member-badge">{{ $t('groups.selfBadge') }}</span>
               <button
                 v-else
@@ -70,7 +70,7 @@
                 :checked="newGroupInvitees.includes(w.id)"
                 @change="toggleInvitee(w.id)"
               />
-              <span>{{ w.name }}</span>
+              <span>{{ $nm(w.name) }}</span>
             </label>
             <p v-if="!allOtherWorkers.length" class="empty-sub">{{ $t('groups.noOtherWorkers') }}</p>
           </div>
@@ -101,7 +101,7 @@
               :checked="pickedWorkerIds.includes(w.id)"
               @change="togglePick(w.id)"
             />
-            <span>{{ w.name }}</span>
+            <span>{{ $nm(w.name) }}</span>
           </label>
           <p v-if="!availableWorkers.length" class="empty-sub">{{ $t('groups.noAvailableWorkers') }}</p>
         </div>

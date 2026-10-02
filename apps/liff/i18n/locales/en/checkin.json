@@ -116,5 +116,6 @@
   "locHelpStep2": "Android: tap the lock icon at the top of Chrome → Permissions → Location → Allow",
   "submitCheckinWithReason": "Record check-in with reason",
   "submitCheckoutWithReason": "Record check-out with reason",
-  "stepLocationNote": "Your location is recorded at the same time (used only to confirm attendance)."
+  "stepLocationNote": "Your location is recorded at the same time (used only to confirm attendance).",
+  "lateToday": "{md} (today)"
 }

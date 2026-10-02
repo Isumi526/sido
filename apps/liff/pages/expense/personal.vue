@@ -1,19 +1,19 @@
 <template>
   <div class="app">
-    <AppNav subtitle="経費申請" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
+    <AppNav :subtitle="$t('personalExpense.sectionTitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
       <div v-if="loading" class="state-screen">
         <div class="spinner" />
-        <p class="state-text">読み込み中…</p>
+        <p class="state-text">{{ $t('personalExpense.loading') }}</p>
       </div>
 
       <!-- 権限なし / 枠なし（かつ業務経費も出せない）。入口は出さず理由だけ出す（黙って空画面にしない） -->
       <section v-else-if="!canSubmit && !canSubmitBusiness" class="pe-card">
         <div class="pe-denied">
           <span class="material-symbols-rounded pe-icon">lock</span>
-          <p>経費申請が許可されていません。</p>
-          <p class="pe-hint">現場に紐づかない経費（オフィス・移動など）を申請するには、管理者が作業員マスタで「経費申請」を許可し、月額の上限金額を設定する必要があります。</p>
+          <p>{{ $t('personalExpense.deniedTitle') }}</p>
+          <p class="pe-hint">{{ $t('personalExpense.deniedHint') }}</p>
         </div>
       </section>
 
@@ -29,24 +29,24 @@
                入口は1つのまま。ここで選んだ区分が下の登録フォームと一括登録の下書きに効く -->
           <div class="pe-kind" role="radiogroup" data-testid="pe-kind">
             <label class="pe-kind-opt" :class="{ on: kind === 'budget', disabled: !canSubmit }">
-              <input type="radio" name="pe-kind" value="budget" :disabled="!canSubmit" :checked="kind === 'budget'" data-testid="pe-kind-budget" @change="kind = 'budget'" />個人枠
+              <input type="radio" name="pe-kind" value="budget" :disabled="!canSubmit" :checked="kind === 'budget'" data-testid="pe-kind-budget" @change="kind = 'budget'" />{{ $t('personalExpense.kindBudget') }}
             </label>
             <label class="pe-kind-opt" :class="{ on: kind === 'business', disabled: !canSubmitBusiness }">
-              <input type="radio" name="pe-kind" value="business" :disabled="!canSubmitBusiness" :checked="kind === 'business'" data-testid="pe-kind-business" @change="kind = 'business'" />業務経費
+              <input type="radio" name="pe-kind" value="business" :disabled="!canSubmitBusiness" :checked="kind === 'business'" data-testid="pe-kind-business" @change="kind = 'business'" />{{ $t('personalExpense.kindBusiness') }}
             </label>
-            <span class="pe-kind-hint" data-testid="pe-kind-hint">{{ kind === 'budget' ? '月額の上限（個人枠）から使う分。残りの枠に照らして管理されます。' : '仕事で使ったが特定の現場に紐づかない経費（消耗品の買い置きなど）。枠は消費しません。' }}</span>
+            <span class="pe-kind-hint" data-testid="pe-kind-hint">{{ kind === 'budget' ? $t('personalExpense.kindBudgetHint') : $t('personalExpense.kindBusinessHint') }}</span>
           </div>
           <div v-if="kind === 'budget' && canSubmit" class="pe-budget" :class="{ over: usage.isOver }" data-testid="pe-budget">
             <div class="pe-budget-row">
-              <span>今月の利用</span>
+              <span>{{ $t('personalExpense.usedThisMonth') }}</span>
               <strong>¥{{ usage.used.toLocaleString() }} / ¥{{ (usage.limit ?? 0).toLocaleString() }}</strong>
             </div>
             <div class="pe-bar"><div class="pe-bar-fill" :style="{ width: barWidth }" /></div>
             <p v-if="usage.isOver" class="pe-over" data-testid="pe-over">
               <span class="material-symbols-rounded pe-icon">warning</span>
-              上限を ¥{{ (usage.used - (usage.limit ?? 0)).toLocaleString() }} 超えています（登録はできます。管理者に共有されます）
+              {{ $t('personalExpense.overLimit', { over: (usage.used - (usage.limit ?? 0)).toLocaleString() }) }}
             </p>
-            <p v-else class="pe-remain">残り ¥{{ usage.remaining.toLocaleString() }}</p>
+            <p v-else class="pe-remain">{{ $t('personalExpense.budgetRemain', { remain: `¥${usage.remaining.toLocaleString()}` }) }}</p>
           </div>
         </section>
 
@@ -54,79 +54,79 @@
              「まず撮ったものを入れる」を最初の一手にする。領収書が無いケースは
              下の手入力フォームでそのまま登録できる（領収書は必須ではない）。 -->
         <section class="pe-card" data-testid="pe-receipt-card">
-          <div class="pe-card-title">領収書から登録</div>
+          <div class="pe-card-title">{{ $t('personalExpense.receiptTitle') }}</div>
           <!-- ★添付した写真は1枚ずつ ✕ で外せる（間違えて付けた時の削除・2026-09-13 辻さん）。
                日報の領収書と同じ AttachedFilesBadge を使う。 -->
           <AttachedFilesBadge :files="files" @remove-file="(p) => removePickedFile(p.index)" />
           <input type="file" accept="image/*,application/pdf" multiple class="pe-file" data-testid="pe-files" @change="onPickFiles" />
-          <p v-if="files.length" class="pe-hint">{{ files.length }}件を添付します</p>
-          <p v-else class="pe-hint">複数枚まとめて選べます。1枚ずつ登録し直す必要はありません。</p>
+          <p v-if="files.length" class="pe-hint">{{ $t('personalExpense.filesAttached', { count: files.length }) }}</p>
+          <p v-else class="pe-hint">{{ $t('personalExpense.filesHint') }}</p>
           <!-- 1枚だけなら従来どおり下のフォームを直接埋める（既存の使い方を壊さない） -->
           <button v-if="files.length === 1" type="button" class="pe-ai" :disabled="analyzing" data-testid="pe-analyze" @click="onAnalyze">
-            {{ analyzing ? '解析中…' : '領収書から入力' }}
+            {{ analyzing ? $t('personalExpense.analyzing') : $t('personalExpense.analyzeOne') }}
           </button>
           <!-- 複数枚は「1枚=1件の下書き」に展開する -->
           <button v-else-if="files.length > 1" type="button" class="pe-ai" :disabled="batchAnalyzing" data-testid="pe-analyze-batch" @click="onAnalyzeBatch">
-            {{ batchAnalyzing ? `解析中… (${analyzedCount}/${files.length})` : `${files.length}枚をまとめて解析` }}
+            {{ batchAnalyzing ? $t('personalExpense.analyzingProgress', { done: analyzedCount, total: files.length }) : $t('personalExpense.analyzeBatch', { count: files.length }) }}
           </button>
           <p v-if="aiMsg" class="pe-hint" data-testid="pe-ai-msg">{{ aiMsg }}</p>
           <p class="pe-hint pe-noreceipt" data-testid="pe-no-receipt-hint">
-            領収書が無い経費（交通系ICの運賃など）は、そのまま下の「経費を登録」に手入力してください。
+            {{ $t('personalExpense.noReceiptHint') }}
           </p>
         </section>
 
         <!-- ★まとめて解析した下書き。勝手には登録せず、人が確認・修正してから一括登録する -->
         <section v-if="drafts.length" class="pe-card" data-testid="pe-drafts">
-          <div class="pe-card-title">解析した領収書 {{ drafts.length }}件（確認して登録）</div>
+          <div class="pe-card-title">{{ $t('personalExpense.draftsTitle', { count: drafts.length }) }}</div>
           <div v-for="(d, di) in drafts" :key="d.id" class="pe-draft" :class="{ failed: d.status === 'failed' }" data-testid="pe-draft">
             <div class="pe-draft-head">
               <span class="pe-draft-file">{{ d.file.name }}</span>
-              <button type="button" class="pe-draft-del" title="この領収書を下書きから外す" data-testid="pe-draft-remove" @click="drafts.splice(di, 1)">×</button>
+              <button type="button" class="pe-draft-del" :title="$t('personalExpense.draftRemove')" data-testid="pe-draft-remove" @click="drafts.splice(di, 1)">×</button>
             </div>
             <p v-if="d.error" class="pe-draft-err" data-testid="pe-draft-err">{{ d.error }}</p>
             <div class="pe-draft-grid">
               <input v-model="d.date" type="date" class="pe-input" data-testid="pe-draft-date" @change="ensureWorkedSites(d.date)" />
               <select v-model="d.account_category" class="pe-input" data-testid="pe-draft-account">
-                <option v-for="o in EXPENSE_ACCOUNT_OPTIONS" :key="o" :value="o">{{ o }}</option>
+                <option v-for="o in EXPENSE_ACCOUNT_OPTIONS" :key="o" :value="o">{{ acctLabel(o) }}</option>
               </select>
-              <input v-model.number="d.amount" type="number" inputmode="numeric" class="pe-input" placeholder="金額" data-testid="pe-draft-amount" />
-              <input v-model="d.payee" class="pe-input" placeholder="支払い先" data-testid="pe-draft-payee" />
-              <input v-model="d.registration_number" class="pe-input" placeholder="登録番号(T...)" data-testid="pe-draft-regno" />
-              <input v-model="d.note" class="pe-input" placeholder="用途・内訳" data-testid="pe-draft-note" />
+              <input v-model.number="d.amount" type="number" inputmode="numeric" class="pe-input" :placeholder="$t('personalExpense.amountPlaceholder')" data-testid="pe-draft-amount" />
+              <input v-model="d.payee" class="pe-input" :placeholder="$t('personalExpense.payeeLabel')" data-testid="pe-draft-payee" />
+              <input v-model="d.registration_number" class="pe-input" :placeholder="$t('personalExpense.regNoPlaceholder')" data-testid="pe-draft-regno" />
+              <input v-model="d.note" class="pe-input" :placeholder="$t('personalExpense.noteDetailPlaceholder')" data-testid="pe-draft-note" />
             </div>
             <!-- ★その領収書の日付にその作業員が出勤していた現場を上に出す（無ければ全現場）。任意。 -->
             <select class="pe-input" data-testid="pe-draft-site"
                     :value="siteChoiceValue(d)"
                     @change="applySiteChoice(d, ($event.target as HTMLSelectElement).value, d.date)">
-              <option value="">現場を選ぶ（任意）</option>
-              <optgroup v-if="siteOptions(d.date).offices.length" label="オフィス・工場">
-                <option v-for="o in siteOptions(d.date).offices" :key="`do-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              <option value="">{{ $t('personalExpense.sitePick') }}</option>
+              <optgroup v-if="siteOptions(d.date).offices.length" :label="$t('personalExpense.groupOffices')">
+                <option v-for="o in siteOptions(d.date).offices" :key="`do-${d.id}-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
               </optgroup>
-              <optgroup v-if="siteOptions(d.date).worked.length" label="この日に出勤した現場">
-                <option v-for="o in siteOptions(d.date).worked" :key="`dw-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              <optgroup v-if="siteOptions(d.date).worked.length" :label="$t('personalExpense.groupWorked')">
+                <option v-for="o in siteOptions(d.date).worked" :key="`dw-${d.id}-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
               </optgroup>
-              <optgroup label="すべての現場">
-                <option v-for="o in siteOptions(d.date).all" :key="`da-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              <optgroup :label="$t('personalExpense.groupAll')">
+                <option v-for="o in siteOptions(d.date).all" :key="`da-${d.id}-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
               </optgroup>
             </select>
             <!-- 現場経費と同じ税務要件。一括登録でも素通りさせない -->
             <input v-if="requiresCompanions({ category: d.account_category, account: d.account_category })"
-                   v-model="d.companions" class="pe-input" placeholder="同行者名（必須）" data-testid="pe-draft-companions" />
+                   v-model="d.companions" class="pe-input" :placeholder="$t('personalExpense.companionsRequiredLabel')" data-testid="pe-draft-companions" />
             <!-- ★支払元は二択。チェック1つだと「未チェック＝会社払い」が暗黙で分かりづらかった -->
-            <div class="pe-payer" role="radiogroup" aria-label="支払元">
+            <div class="pe-payer" role="radiogroup" :aria-label="$t('personalExpense.payer')">
               <label class="pe-check">
                 <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!d.tategae" data-testid="pe-draft-payer-company" @change="d.tategae = false" />
-                会社からの預金、又はカードでの支払い
+                {{ $t('personalExpense.payerCompany') }}
               </label>
               <label class="pe-check">
                 <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!!d.tategae" data-testid="pe-draft-payer-personal" @change="d.tategae = true" />
-                個人で立替えた
+                {{ $t('personalExpense.payerPersonal') }}
               </label>
             </div>
           </div>
 
           <button class="pe-submit" :disabled="batchSaving" data-testid="pe-submit-batch" @click="onSubmitBatch">
-            {{ batchSaving ? `登録中… (${savedCount}/${drafts.length})` : `${drafts.length}件をまとめて登録` }}
+            {{ batchSaving ? $t('personalExpense.savingProgress', { done: savedCount, total: drafts.length }) : $t('personalExpense.submitBatch', { count: drafts.length }) }}
           </button>
         </section>
 
@@ -136,64 +136,64 @@
 
         <!-- 登録フォーム -->
         <section class="pe-card">
-          <div class="pe-card-title">経費を登録（領収書なしでもOK）</div>
+          <div class="pe-card-title">{{ $t('personalExpense.formTitle') }}</div>
 
-          <label class="pe-label">日付</label>
+          <label class="pe-label">{{ $t('personalExpense.date') }}</label>
           <input v-model="form.date" type="date" class="pe-input" data-testid="pe-date" @change="ensureWorkedSites(form.date)" />
 
-          <label class="pe-label">紐付け先（オフィス・現場／任意）</label>
+          <label class="pe-label">{{ $t('personalExpense.siteLabel') }}</label>
           <select class="pe-input" data-testid="pe-site"
                   :value="siteChoiceValue(form)"
                   @change="applySiteChoice(form, ($event.target as HTMLSelectElement).value, form.date)">
-            <option value="">拠点・現場を選ばない</option>
-            <optgroup v-if="siteOptions(form.date).offices.length" label="オフィス・工場" data-testid="pe-site-offices">
-              <option v-for="o in siteOptions(form.date).offices" :key="`fo-${o.value}`" :value="o.value">{{ o.name }}</option>
+            <option value="">{{ $t('personalExpense.siteNone') }}</option>
+            <optgroup v-if="siteOptions(form.date).offices.length" :label="$t('personalExpense.groupOffices')" data-testid="pe-site-offices">
+              <option v-for="o in siteOptions(form.date).offices" :key="`fo-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
             </optgroup>
-            <optgroup v-if="siteOptions(form.date).worked.length" label="この日に出勤した現場">
-              <option v-for="o in siteOptions(form.date).worked" :key="`fw-${o.value}`" :value="o.value">{{ o.name }}</option>
+            <optgroup v-if="siteOptions(form.date).worked.length" :label="$t('personalExpense.groupWorked')">
+              <option v-for="o in siteOptions(form.date).worked" :key="`fw-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
             </optgroup>
-            <optgroup label="すべての現場">
-              <option v-for="o in siteOptions(form.date).all" :key="`fa-${o.value}`" :value="o.value">{{ o.name }}</option>
+            <optgroup :label="$t('personalExpense.groupAll')">
+              <option v-for="o in siteOptions(form.date).all" :key="`fa-${o.value}`" :value="o.value">{{ $nm(o.name) }}</option>
             </optgroup>
           </select>
 
-          <label class="pe-label">科目</label>
+          <label class="pe-label">{{ $t('personalExpense.account') }}</label>
           <select v-model="form.account_category" class="pe-input" data-testid="pe-account">
-            <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+            <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ acctLabel(a) }}</option>
           </select>
 
-          <label class="pe-label">金額（円）</label>
+          <label class="pe-label">{{ $t('personalExpense.amount') }}</label>
           <input v-model.number="form.amount" type="number" inputmode="numeric" class="pe-input" placeholder="0" data-testid="pe-amount" />
 
-          <label class="pe-label">支払い先</label>
-          <input v-model="form.payee" type="text" class="pe-input" placeholder="店名・業者名" data-testid="pe-payee" />
+          <label class="pe-label">{{ $t('personalExpense.payeeLabel') }}</label>
+          <input v-model="form.payee" type="text" class="pe-input" :placeholder="$t('personalExpense.payeePlaceholder')" data-testid="pe-payee" />
 
           <!-- 同行者名は接待交際費のみ必須（税務上「誰と行ったか」の記録） -->
           <template v-if="needsCompanions">
-            <label class="pe-label">同行者名（必須）</label>
-            <input v-model="form.companions" type="text" class="pe-input" placeholder="同行者名（例: ○○商事 田中様）" data-testid="pe-companions" />
+            <label class="pe-label">{{ $t('personalExpense.companionsRequiredLabel') }}</label>
+            <input v-model="form.companions" type="text" class="pe-input" :placeholder="$t('personalExpense.companionsPlaceholderFull')" data-testid="pe-companions" />
           </template>
 
-          <label class="pe-label">インボイス番号</label>
+          <label class="pe-label">{{ $t('personalExpense.invoiceNo') }}</label>
           <input v-model="form.registration_number" type="text" class="pe-input" placeholder="T1234567890123" data-testid="pe-invoice" />
 
-          <label class="pe-label">内訳・メモ</label>
-          <textarea v-model="form.note" class="pe-input" rows="2" placeholder="用途・内訳" data-testid="pe-note" />
+          <label class="pe-label">{{ $t('personalExpense.noteMemo') }}</label>
+          <textarea v-model="form.note" class="pe-input" rows="2" :placeholder="$t('personalExpense.noteDetailPlaceholder')" data-testid="pe-note" />
 
-          <label class="pe-label">支払元</label>
-          <div class="pe-payer" role="radiogroup" aria-label="支払元">
+          <label class="pe-label">{{ $t('personalExpense.payer') }}</label>
+          <div class="pe-payer" role="radiogroup" :aria-label="$t('personalExpense.payer')">
             <label class="pe-check">
               <input type="radio" name="pe-payer" :checked="!form.tategae" data-testid="pe-payer-company" @change="form.tategae = false" />
-              会社からの預金、又はカードでの支払い
+              {{ $t('personalExpense.payerCompany') }}
             </label>
             <label class="pe-check">
               <input type="radio" name="pe-payer" :checked="!!form.tategae" data-testid="pe-payer-personal" @change="form.tategae = true" />
-              個人で立替えた（会社から本人へ振込）
+              {{ $t('personalExpense.payerPersonalTransfer') }}
             </label>
           </div>
 
           <button class="pe-submit" :disabled="busy" data-testid="pe-submit" @click="onSubmit">
-            {{ busy ? '登録中…' : '登録する' }}
+            {{ busy ? $t('personalExpense.saving') : $t('personalExpense.submit') }}
           </button>
           <p v-if="msg" class="pe-msg" :class="{ ok: msgOk }" data-testid="pe-msg">{{ msg }}</p>
         </section>
@@ -201,13 +201,13 @@
 
         <!-- 当月の明細 -->
         <section class="pe-card">
-          <div class="pe-card-title">{{ month }} の明細</div>
-          <div v-if="!items.length" class="pe-empty">まだ登録がありません</div>
+          <div class="pe-card-title">{{ $t('personalExpense.monthItems', { month }) }}</div>
+          <div v-if="!items.length" class="pe-empty">{{ $t('personalExpense.empty') }}</div>
           <ul v-else class="pe-list" data-testid="pe-list">
             <li v-for="r in items" :key="r.id" class="pe-item">
               <span class="pe-date">{{ r.date }}</span>
-              <span class="pe-acct">{{ r.account_category }}</span>
-              <span v-if="r.expense_kind === 'business'" class="pe-kind-badge" data-testid="pe-item-business">業務</span>
+              <span class="pe-acct">{{ acctLabel(r.account_category) }}</span>
+              <span v-if="r.expense_kind === 'business'" class="pe-kind-badge" data-testid="pe-item-business">{{ $t('personalExpense.kindBusinessBadge') }}</span>
               <!-- ★科目（会計仕訳用）と品名（何に使ったか）は別物。運用者から
                    「科目と品名を両方表示する」（2026-08-10 電話）。note が実際の品名。 -->
               <span v-if="r.note" class="pe-item-name">{{ r.note }}</span>
@@ -228,6 +228,14 @@ import type { User } from '~/types'
 import { EXPENSE_ACCOUNT_OPTIONS, requiresCompanions, computeBudgetUsage } from '~/composables/expense-flatten.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { todayStr } from '~/composables/schedule-core.gen'
+import { personalExpenseAccountKey } from '~/composables/usePersonalExpense'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+function acctLabel(account: string): string {
+  const k = personalExpenseAccountKey(account)
+  return k ? t(`personalExpense.accountLabel.${k}`) : account
+}
 
 const liff = useLiff()
 const config = useRuntimeConfig()
@@ -435,7 +443,7 @@ async function onAnalyze() {
   aiMsg.value = ''
   try {
     const r = await receipt.analyze(f, 'personal')
-    if (!r) { aiMsg.value = '解析できませんでした。手入力してください'; return }
+    if (!r) { aiMsg.value = t('personalExpense.aiNoResult'); return }
     if (r.yen != null && !(Number(form.value.amount) > 0)) form.value.amount = r.yen
     if (r.storeName && !form.value.payee.trim()) form.value.payee = r.storeName
     if (r.invoiceNumber && !form.value.registration_number.trim()) form.value.registration_number = r.invoiceNumber
@@ -443,9 +451,9 @@ async function onAnalyze() {
     if (r.account && (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).includes(r.account)) {
       form.value.account_category = r.account
     }
-    aiMsg.value = '領収書から入力しました。内容を確認してください'
+    aiMsg.value = t('personalExpense.aiFilled')
   } catch (e: any) {
-    aiMsg.value = e?.message ?? '解析に失敗しました'
+    aiMsg.value = e?.message ?? t('personalExpense.analyzeFailed')
   } finally {
     analyzing.value = false
   }
@@ -486,7 +494,7 @@ async function onAnalyzeBatch() {
         const r = await receipt.analyze(f, `personal_batch_${i}`)
         if (!r) {
           d.status = 'failed'
-          d.error = '解析できませんでした。手で入力してください'
+          d.error = t('personalExpense.draftNoResult')
         } else {
           if (r.yen != null) d.amount = r.yen
           if (r.storeName) d.payee = r.storeName
@@ -494,11 +502,11 @@ async function onAnalyzeBatch() {
           if (r.label) d.note = r.label
           if (r.account && (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).includes(r.account)) d.account_category = r.account
           // 金額が取れなかった＝そのままでは登録できないので、その場で気づけるようにする
-          if (!(d.amount > 0)) { d.status = 'failed'; d.error = '金額を読み取れませんでした。入力してください' }
+          if (!(d.amount > 0)) { d.status = 'failed'; d.error = t('personalExpense.draftNoAmount') }
         }
       } catch (e: any) {
         d.status = 'failed'
-        d.error = e?.message ?? '解析に失敗しました'
+        d.error = e?.message ?? t('personalExpense.analyzeFailed')
       } finally {
         analyzedCount.value++
       }
@@ -510,8 +518,8 @@ async function onAnalyzeBatch() {
     await Promise.all([...new Set(made.map((d) => d.date))].map((dt) => ensureWorkedSites(dt)))
     const ng = made.filter((d) => d.status === 'failed').length
     aiMsg.value = ng
-      ? `${made.length}件を読み込みました（うち${ng}件は要入力）。内容を確認してください`
-      : `${made.length}件を読み込みました。内容を確認してください`
+      ? t('personalExpense.batchLoadedWithNg', { count: made.length, ng })
+      : t('personalExpense.batchLoaded', { count: made.length })
   } finally {
     batchAnalyzing.value = false
   }
@@ -519,10 +527,10 @@ async function onAnalyzeBatch() {
 
 /** 下書き1件の入力チェック。問題があれば理由を返す（無ければ null） */
 function validateDraft(d: Draft): string | null {
-  if (!d.date) return '日付を入力してください'
-  if (!(Number(d.amount) > 0)) return '金額を入力してください'
+  if (!d.date) return t('personalExpense.needDate')
+  if (!(Number(d.amount) > 0)) return t('personalExpense.needAmount')
   if (requiresCompanions({ category: d.account_category, account: d.account_category }) && !d.companions.trim()) {
-    return '接待交際費は同行者名の入力が必須です'
+    return t('personalExpense.needCompanions')
   }
   return null
 }
@@ -544,7 +552,7 @@ async function onSubmitBatch() {
     if (err) { d.status = 'failed'; invalid++ }
   }
   if (invalid) {
-    batchMsg.value = `${invalid}件に入力の不足があります。赤い行を直してください`
+    batchMsg.value = t('personalExpense.batchInvalid', { count: invalid })
     batchMsgOk.value = false
     return
   }
@@ -585,7 +593,7 @@ async function onSubmitBatch() {
         d.error = ''
       } catch (e: any) {
         d.status = 'failed'
-        d.error = e?.message ?? '登録に失敗しました'
+        d.error = e?.message ?? t('personalExpense.saveFailed')
       } finally {
         savedCount.value++
       }
@@ -598,8 +606,8 @@ async function onSubmitBatch() {
     await refresh()
     batchMsgOk.value = ng === 0
     batchMsg.value = ng === 0
-      ? (usage.value.isOver && kind.value === 'budget' ? `${ok}件を登録しました（上限を超えています）` : `${ok}件を登録しました`)
-      : `${ok}件を登録し、${ng}件は失敗しました。残った行の理由を確認してください`
+      ? (usage.value.isOver && kind.value === 'budget' ? t('personalExpense.batchSavedOver', { count: ok }) : t('personalExpense.batchSaved', { count: ok }))
+      : t('personalExpense.batchPartial', { ok, ng })
   } finally {
     batchSaving.value = false
   }
@@ -607,10 +615,10 @@ async function onSubmitBatch() {
 
 async function onSubmit() {
   msg.value = ''
-  if (!form.value.date) { msg.value = '日付を入力してください'; msgOk.value = false; return }
-  if (!(Number(form.value.amount) > 0)) { msg.value = '金額を入力してください'; msgOk.value = false; return }
+  if (!form.value.date) { msg.value = t('personalExpense.needDate'); msgOk.value = false; return }
+  if (!(Number(form.value.amount) > 0)) { msg.value = t('personalExpense.needAmount'); msgOk.value = false; return }
   if (needsCompanions.value && !form.value.companions.trim()) {
-    msg.value = '接待交際費は同行者名の入力が必須です'; msgOk.value = false; return
+    msg.value = t('personalExpense.needCompanions'); msgOk.value = false; return
   }
   busy.value = true
   try {
@@ -652,10 +660,10 @@ async function onSubmit() {
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
     aiMsg.value = ''
     await refresh()
-    msg.value = usage.value.isOver && kind.value === 'budget' ? '登録しました（上限を超えています）' : '登録しました'
+    msg.value = usage.value.isOver && kind.value === 'budget' ? t('personalExpense.savedOver') : t('personalExpense.saved')
     msgOk.value = true
   } catch (e: any) {
-    msg.value = e?.message ?? '登録に失敗しました'
+    msg.value = e?.message ?? t('personalExpense.saveFailed')
     msgOk.value = false
   } finally {
     busy.value = false
@@ -663,8 +671,8 @@ async function onSubmit() {
 }
 
 async function onDelete(id: string) {
-  if (!confirm('この経費を削除しますか？')) return
-  try { await pe.remove(id); await refresh() } catch (e: any) { msg.value = e?.message ?? '削除に失敗しました'; msgOk.value = false }
+  if (!confirm(t('personalExpense.deleteConfirm'))) return
+  try { await pe.remove(id); await refresh() } catch (e: any) { msg.value = e?.message ?? t('personalExpense.deleteFailed'); msgOk.value = false }
 }
 
 onMounted(async () => {

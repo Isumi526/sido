@@ -1,0 +1,12 @@
+{
+  "title": "作業員ログイン",
+  "sub": "ログインID（またはメールアドレス）とパスワードでログインします。",
+  "idLabel": "ログインID または メールアドレス",
+  "idPlaceholder": "ID または email",
+  "passwordLabel": "パスワード",
+  "submitting": "ログイン中…",
+  "submit": "ログイン",
+  "errRequired": "ログインID（またはメール）とパスワードを入力してください",
+  "errWrong": "ログインに失敗しました（ログインID／メールまたはパスワードが違います）",
+  "errFailed": "ログインに失敗しました"
+}

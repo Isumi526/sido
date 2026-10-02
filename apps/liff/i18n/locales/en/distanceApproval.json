@@ -35,5 +35,6 @@
     "not_found": "This report was not found.",
     "conflict": "The report was edited meanwhile. It has been reloaded — please check again.",
     "other": "Something went wrong. Please try again later."
-  }
+  },
+  "sep": " · "
 }

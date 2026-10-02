@@ -69,5 +69,15 @@
   "balancesNote": "倉庫＝拠点にある余り。現場＝持ち出したまま戻っていない数（使った分は差し引かれません）。会計在庫ではありません。",
   "balancesEmpty": "まだ残数はありません",
   "locBase": "倉庫",
-  "locSite": "現場"
+  "locSite": "現場",
+  "catBoard": "ボード",
+  "catBase": "下地材",
+  "catFloor": "床材",
+  "catCeiling": "天井材",
+  "catAdhesive": "接着剤・副資材",
+  "catScrew": "ビス・金物",
+  "catPaint": "塗料・シーリング",
+  "catProtect": "養生・消耗品",
+  "catOther": "その他",
+  "baseUnspecified": "拠点未指定"
 }
