@@ -47,7 +47,8 @@ test('★「特大」でも主な画面がスマホの幅から横にはみ出�
 })
 
 test('メニュー（言語の切り替えの下）からも選べる', async ({ page }) => {
-  await page.goto('/', { waitUntil: 'networkidle' })
+  // ホームは未送信のお知らせが重なることがあるので、設定ページのメニューから開く
+  await page.goto('/settings', { waitUntil: 'networkidle' })
   await page.getByTestId('nav-hamburger').click()
   await expect(page.getByTestId('drawer-font-scale')).toBeVisible({ timeout: 10000 })
   await page.getByTestId('font-scale-large').click()
