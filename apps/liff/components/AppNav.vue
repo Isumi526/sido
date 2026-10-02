@@ -120,6 +120,22 @@
           </div>
         </div>
 
+        <!-- 文字の大きさ（II-1・2026-10-02 シード要望15）。言語の切り替えと同じ並びに置く -->
+        <div class="drawer-lang" data-testid="drawer-font-scale">
+          <span class="drawer-lang-icon material-symbols-rounded">format_size</span>
+          <div class="drawer-lang-toggle">
+            <button
+              v-for="s in fontScales"
+              :key="s"
+              type="button"
+              class="drawer-lang-btn"
+              :class="{ active: fontScale === s }"
+              :data-testid="`font-scale-${s}`"
+              @click="setFontScale(s)"
+            >{{ $t(`settings.fontScale.${s}`) }}</button>
+          </div>
+        </div>
+
         <!-- 代理入力セクション -->
         <div v-if="proxy.canProxy.value" class="drawer-proxy">
           <div class="drawer-proxy-header">
@@ -182,6 +198,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const { locale, setLocale, locales } = useLocale()
+const { scale: fontScale, setScale: setFontScale, scales: fontScales } = useFontScale()
 // ブランド表示は「身元のスラッグ」(resolvedSlug)優先・未解決時のみ env フォールバック
 // （env だと別テナント作業員でも SIDO 等と出てしまうため）。テナント確認用の安全表示のため
 // ヘッダー簡素化(2026-07-16)後もタイトル直下に残す（liff.tenant-*.spec.ts が検証）。
