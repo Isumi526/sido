@@ -119,7 +119,7 @@ test('経費精算: 現場責任者・作業員には出さず通知もしない
 test('★在庫: 事務が確認する会社で作業員が登録すると役員/経理へ通知され、やることに件数が出て、押すと管理画面の在庫が開く', async ({ page }) => {
   await restSrv('settings', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ account_id: accountId, key: 'inventory_confirm_role', value: 'office' }),
+    body: JSON.stringify({ account_id: accountId, key: 'inventory_confirm_role', value: 'office', label: 'E2E' }),
   })
   const moved = await ef('inventory', otherWorkerId, {
     action: 'move', kind: 'in', qty: 3, photoUrls: ['https://example.test/a5.png'], note: MARK, clientRequestId: crypto.randomUUID(),
