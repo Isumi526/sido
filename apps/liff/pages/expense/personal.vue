@@ -393,7 +393,7 @@ const form = ref({
   companions: '',
   registration_number: '',
   note: '',
-  tategae: false,
+  tategae: true,
   site_id: '',
   site_name: '',
 })
@@ -478,7 +478,7 @@ async function onAnalyzeBatch() {
       const d: Draft = {
         id: crypto.randomUUID(), file: f, status: 'ready', error: '',
         date: todayStr(), account_category: '旅費交通費', amount: 0,
-        payee: '', companions: '', registration_number: '', note: '', tategae: false,
+        payee: '', companions: '', registration_number: '', note: '', tategae: true,
         site_id: defaultOffice.value?.id ?? '', site_name: defaultOffice.value?.name ?? '',
         token: crypto.randomUUID(),
       }
@@ -646,7 +646,7 @@ async function onSubmit() {
       client_token: submitToken.value,
       expense_kind: kind.value,
     })
-    form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false, site_id: '', site_name: '' }
+    form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: true, site_id: '', site_name: '' }
     applyDefaultOffice(form.value)
     files.value = []
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する

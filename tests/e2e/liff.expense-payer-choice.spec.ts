@@ -119,3 +119,24 @@ test('AC3★: 選び直すと保存され、保存形式は tategae(boolean) の
 
   await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}&report_date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
 })
+
+// ★I-1（2026-10-02 シード要望1・設計「入力の手間を減らす」）: 新しく足す経費は「個人で立替えた」が最初から選ばれている。
+//  会社のカードで払った時だけ本人が切り替える。既に保存された行（上の AC2）の意味は変えない。
+test('I-1★: 新しく入れる経費は「個人で立替えた」が最初から選ばれている（日報・個人経費）', async ({ page }) => {
+  await page.goto('/report', { waitUntil: 'networkidle' })
+  if (await page.getByText('送信済みです').count()) { test.skip(true, '全日送信済みのためフォーム無し'); return }
+  await page.waitForSelector('form.form', { timeout: 15000 })
+  const otherField = page.locator('.field', { has: page.locator('label', { hasText: 'その他経費' }) }).first()
+  await otherField.locator('select').selectOption('あり')
+  const card = page.getByTestId('other-item-0-0')
+  await expect(card).toBeVisible({ timeout: 10000 })
+  await expect(card.getByTestId('payer-personal'), '日報の経費は個人立替が既定').toBeChecked()
+  await expect(card.getByTestId('payer-company')).not.toBeChecked()
+
+  await page.goto('/expense/personal', { waitUntil: 'networkidle' })
+  const pePersonal = page.getByTestId('pe-payer-personal')
+  if (await pePersonal.count()) {
+    await expect(pePersonal, '個人経費の入力も個人立替が既定').toBeChecked()
+    await expect(page.getByTestId('pe-payer-company')).not.toBeChecked()
+  }
+})
