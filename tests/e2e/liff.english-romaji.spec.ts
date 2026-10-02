@@ -39,7 +39,7 @@ test.beforeAll(async () => {
     method: 'POST', headers: { Prefer: 'return=representation' },
     body: JSON.stringify([
       { account_id: accountId, name: SITE, name_kana: 'ヤマダ ナイソウ', active: true, status: 'in_progress' },
-      { account_id: accountId, name: SITE_NO_KANA, active: true, status: 'in_progress' },
+      { account_id: accountId, name: SITE_NO_KANA, name_kana: null, active: true, status: 'in_progress' },
     ]),
   })
   siteIds = rows.map((r: any) => r.id)
