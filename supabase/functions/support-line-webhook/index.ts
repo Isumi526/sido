@@ -19,9 +19,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const SECRET       = Deno.env.get('LINE_SUPPORT_CHANNEL_SECRET') ?? ''
-const TOKEN        = Deno.env.get('LINE_SUPPORT_CHANNEL_ACCESS_TOKEN') ?? ''
-const GROUP_IDS    = (Deno.env.get('LINE_SUPPORT_GROUP_IDS') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+// ★鍵は呼ばれるたびに読む（起動時に1回だけ読むと、鍵を入れ直しても動き続けている間は古い値のまま＝2026-10-02 実際に踏んだ）
+const secret   = () => Deno.env.get('LINE_SUPPORT_CHANNEL_SECRET') ?? ''
+const token    = () => Deno.env.get('LINE_SUPPORT_CHANNEL_ACCESS_TOKEN') ?? ''
+const groupIds = () => (Deno.env.get('LINE_SUPPORT_GROUP_IDS') ?? '').split(',').map(s => s.trim()).filter(Boolean)
 const BUCKET       = 'support-line-media'
 const MEDIA_TYPES  = ['image', 'video', 'audio', 'file']
 
@@ -32,7 +33,7 @@ function text(body: string, status = 200): Response {
 /** x-line-signature の検証（タイミング差の出ない比較） */
 async function validSignature(raw: string, signature: string): Promise<boolean> {
   if (!signature) return false
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret()), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw)))
   const expected = btoa(String.fromCharCode(...mac))
   if (expected.length !== signature.length) return false
@@ -42,8 +43,9 @@ async function validSignature(raw: string, signature: string): Promise<boolean> 
 }
 
 async function lineGet(url: string): Promise<Response | null> {
-  if (!TOKEN) return null
-  try { return await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } }) } catch { return null }
+  const t = token()
+  if (!t) return null
+  try { return await fetch(url, { headers: { Authorization: `Bearer ${t}` } }) } catch { return null }
 }
 
 /**
@@ -57,7 +59,7 @@ async function displayNameOf(source: any): Promise<{ name: string | null; status
     : source.type === 'room' ? `https://api.line.me/v2/bot/room/${source.roomId}/member/${uid}`
     : `https://api.line.me/v2/bot/profile/${uid}`
   const res = await lineGet(url)
-  if (!res) return { name: null, status: TOKEN ? 'fetch_failed' : 'no_token' }
+  if (!res) return { name: null, status: token() ? 'fetch_failed' : 'no_token' }
   if (!res.ok) { console.warn('[support-line-webhook] profile failed:', res.status); return { name: null, status: res.status } }
   const j = await res.json().catch(() => null)
   return { name: (j?.displayName as string) ?? null, status: res.status }
@@ -91,7 +93,7 @@ function extOf(contentType: string | null, m: any): string {
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return text('ok')
-  if (!SECRET) return text('not_configured', 503)
+  if (!secret()) return text('not_configured', 503)
 
   const raw = await req.text()
   if (!await validSignature(raw, req.headers.get('x-line-signature') ?? '')) return text('bad_signature', 401)
@@ -107,7 +109,8 @@ Deno.serve(async (req) => {
     try {
       const source = ev?.source ?? {}
       const groupId = source.groupId ?? source.roomId ?? null
-      if (GROUP_IDS.length && !(groupId && GROUP_IDS.includes(groupId))) continue
+      const allowed = groupIds()
+      if (allowed.length && !(groupId && allowed.includes(groupId))) continue
 
       const m = ev?.type === 'message' ? ev.message : null
       const key = m?.id ? `message:${m.id}` : `event:${ev?.webhookEventId ?? `${ev?.type}:${ev?.timestamp}`}`
@@ -120,7 +123,7 @@ Deno.serve(async (req) => {
       let mediaStatus: number | string | null = null
       if (m && MEDIA_TYPES.includes(m.type) && (m.contentProvider?.type ?? 'line') === 'line') {
         const res = await lineGet(`https://api-data.line.me/v2/bot/message/${m.id}/content`)
-        mediaStatus = res ? res.status : (TOKEN ? 'fetch_failed' : 'no_token')
+        mediaStatus = res ? res.status : (token() ? 'fetch_failed' : 'no_token')
         if (res?.ok) {
           mediaType = res.headers.get('content-type')
           const path = `${new Date(ev.timestamp ?? Date.now()).toISOString().slice(0, 10)}/${m.id}.${extOf(mediaType, m)}`
