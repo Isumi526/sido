@@ -280,7 +280,7 @@ def save_with_drawings(wb, src, out):
     os.remove(tmp)
 
 
-def validate(path):
+def validate(path, src=None):
     """Excel が弾く典型パターンを潰す。"""
     z = zipfile.ZipFile(path)
     names = set(z.namelist())
@@ -313,6 +313,13 @@ def validate(path):
         dup = [c for c, k in seen.items() if k > 1]
         if dup:
             errs.append(f'1セルに複数の入力規則: {n} {dup[:5]}')
+    # ★元の Excel にあった図形・画像が出力にも残っているか（openpyxl は黙って落とす・2026-10-02 E-6b）
+    if src:
+        src_names = set(zipfile.ZipFile(src).namelist())
+        lost = sorted(x for x in src_names
+                      if (x.startswith('xl/drawings/') or x.startswith('xl/media/')) and x not in names)
+        if lost:
+            errs.append(f'図形・画像が落ちた: {lost[:5]}')
     return errs
 
 
@@ -331,7 +338,7 @@ def main():
     base = add_sheets(wb)
     add_validations(wb)
     save_with_drawings(wb, src, out)
-    errs = validate(out)
+    errs = validate(out, src)
     print(f'空にしたセル: {cleared} / 落とした塗り: {fills} / 候補の初期件数: {base}')
     print('検証:', '問題なし' if not errs else errs)
     if errs:

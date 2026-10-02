@@ -1,0 +1,33 @@
+# ============================================================
+#  見積Excel の包みの検査（2026-10-02 見積E-6b）
+#  Excel は宣言が1行欠けるだけで「修復または削除しますか」を出す＝静かに壊れる。
+#  書き出し→取り込み（apps/admin/src/lib/xlsxCells.ts）の往復で壊れていないかを、push のたびに確かめる。
+#  ★本物の見積Excel（会社の様式）は公開リポジトリに置けないので、同じ壊れやすい部品を持つ見本をテストの中で組み立てる。
+#   本物から作るテンプレは scripts/make-estimate-template.py が作るたびに同じ検査（validate）を通す。
+#  実体: apps/admin/scripts/xlsx-roundtrip.test.mts ＋ scripts/check-xlsx-package.mjs
+# ============================================================
+name: xlsx-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  xlsx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
+
+      - name: 管理画面の依存を入れる（jszip）
+        working-directory: apps/admin
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: 書き出し→取り込みの往復で包みが壊れないか
+        working-directory: apps/admin
+        run: node --experimental-transform-types scripts/xlsx-roundtrip.test.mts
