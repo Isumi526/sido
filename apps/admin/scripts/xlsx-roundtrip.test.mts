@@ -10,7 +10,7 @@
 //   3. 書き換えたシートでも、数式・書式・入力規則・図形への参照が残っている
 //   4. 書いた値が読み戻せる
 //   5. 検査が「壊れた包み」を本当に見つける（宣言を1行消すと落ちる）
-//  実行: cd apps/admin && node --experimental-strip-types scripts/xlsx-roundtrip.test.mts（CI: .github/workflows/xlsx-check.yml）
+//  実行: cd apps/admin && node --experimental-transform-types scripts/xlsx-roundtrip.test.mts（CI: .github/workflows/xlsx-check.yml）
 // ============================================================
 import assert from 'node:assert/strict'
 import JSZip from 'jszip'

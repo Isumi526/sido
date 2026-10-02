@@ -30,4 +30,4 @@ jobs:
 
       - name: 書き出し→取り込みの往復で包みが壊れないか
         working-directory: apps/admin
-        run: node --experimental-strip-types scripts/xlsx-roundtrip.test.mts
+        run: node --experimental-transform-types scripts/xlsx-roundtrip.test.mts
