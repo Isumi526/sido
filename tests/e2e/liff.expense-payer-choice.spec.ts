@@ -128,8 +128,9 @@ test('I-1★: 新しく入れる経費は「個人で立替えた」が最初か
   await page.waitForSelector('form.form', { timeout: 15000 })
   // 経費の欄は現場を選ぶと出る
   await page.getByTestId('site-select-0').selectOption({ label: 'テスト現場B' })
-  // 「その他経費」の見出しのすぐ後ろの選択欄（なし/あり）
-  await page.locator('label.label', { hasText: /^その他経費$/ }).first().locator('xpath=following-sibling::select[1]').selectOption('あり')
+  // 現場の「経費」を「あり」にすると内訳が出る → 「その他経費」を「あり」に
+  await page.getByText('経費', { exact: true }).first().locator('xpath=following-sibling::select[1]').selectOption('あり')
+  await page.getByText('その他経費', { exact: true }).first().locator('xpath=following-sibling::select[1]').selectOption('あり')
   const card = page.getByTestId('other-item-0-0')
   await expect(card).toBeVisible({ timeout: 10000 })
   await expect(card.getByTestId('payer-personal'), '日報の経費は個人立替が既定').toBeChecked()
