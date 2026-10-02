@@ -87,11 +87,9 @@ test.describe('打刻を忘れた日の遡り入力', () => {
   async function advanceToLastStep(page: import('@playwright/test').Page) {
     // ★描画を待ってから数える。先に count() すると 0件になり、1つもチェックされないまま
     //  最終ステップに進まない（実際にこれで落ちた）
-    await page.waitForSelector('.rule-row, [data-testid="loc-get"], [data-testid="more-actions"]', { timeout: 20000 })
+    await page.waitForSelector('.rule-row, [data-testid="more-actions"]', { timeout: 20000 })
     const rows = page.locator('.rule-row')
     for (let i = 0, n = await rows.count(); i < n; i++) await rows.nth(i).click()
-    const loc = page.getByTestId('loc-get')
-    if (await loc.count()) await loc.click().catch(() => {})
     // 打刻済みの日は完了画面に出る（そこにも同じ畳んだ導線がある）
     await expect(page.getByTestId('more-actions')).toBeVisible({ timeout: 20000 })
   }

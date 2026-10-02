@@ -75,7 +75,6 @@ test.describe('夜のみ現場（日跨ぎ）', () => {
     await page.goto('/checkin', { waitUntil: 'networkidle' })
     const rules = page.locator('.rule-row')
     for (let i = 0, n = await rules.count(); i < n; i++) await rules.nth(i).click()
-    await page.locator('.loc-get').first().click()
     const submit = page.getByRole('button', { name: '退勤を記録する' }).last()
     await expect(submit).toBeEnabled({ timeout: 20000 })
     await submit.click()

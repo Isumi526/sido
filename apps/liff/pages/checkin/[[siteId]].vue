@@ -288,14 +288,6 @@
           </span>
           <span class="step-reopen">{{ $t('checkin.stepReopen') }}</span>
         </button>
-        <button
-          v-if="punchStep === 'submit' && locationState === 'granted'"
-          class="step-done-row" data-testid="step-done-location" @click="stepOverride = 'location'"
-        >
-          <span class="material-symbols-rounded">check_circle</span>
-          <span>{{ $t('checkin.stepLocationDone') }}</span>
-          <span class="step-reopen">{{ $t('checkin.stepReopen') }}</span>
-        </button>
 
         <!-- ① 確認事項 -->
         <template v-if="punchStep === 'rules'">
@@ -330,46 +322,33 @@
           </div>
         </template>
 
-        <!-- ② 現在地の取得。取れた／断られた時点で自動で次へ進む -->
-        <div v-else-if="punchStep === 'location'" class="location-status" :class="locationState" data-testid="location-step">
-          <span class="material-symbols-rounded loc-icon">
-            {{ locationState === 'granted' ? 'location_on'
-               : locationState === 'pending' ? 'location_searching'
-               : locationState === 'idle' ? 'my_location' : 'location_off' }}
-          </span>
+        <!-- ② 記録。★位置は記録ボタンを押した時に一緒に取る（2026-10-02 I-2・要望17）。
+             以前は「現在地を取得」→「記録」の2タップだった（LINEの中で開いていた頃、自動で位置を求めると
+             黙って拒否される制約があったため。今はボタンを押した操作の中で求めるので同じ問題は起きない）。
+             位置が取れない時だけ理由の欄を出し、理由を書けば記録できる（承認はなし＝確認事項4=A）。
+             ここに他のものを足さないこと（足すと元の木阿弥） -->
+        <div v-else-if="needReason" class="location-status blocked" data-testid="loc-reason">
+          <span class="material-symbols-rounded loc-icon">location_off</span>
           <span class="loc-text">
-            <template v-if="locationState === 'idle'">
-              <span class="loc-lead">{{ $t('checkin.locIdleIntro') }}<b>{{ $t('checkin.locIdleAllow') }}</b>{{ $t('checkin.locIdleOutro') }}</span>
-              <button class="loc-get" data-testid="loc-get" @click="fetchLocation">
-                <span class="material-symbols-rounded loc-get-icon">my_location</span>{{ $t('checkin.locGetCurrent') }}
-              </button>
-              <span class="loc-note">{{ $t('checkin.locIdleNote') }}</span>
-            </template>
-            <template v-else-if="locationState === 'pending'">{{ $t('checkin.locPending') }}</template>
-            <template v-else-if="locationState === 'granted'">
-              {{ $t('checkin.locGranted', { lat: locationLat!.toFixed(5), lng: locationLng!.toFixed(5) }) }}
-            </template>
-            <template v-else>
-              <span class="loc-lead">{{ $t('checkin.locUnavailable') }}</span>
-              <button class="loc-retry" @click="fetchLocation">{{ $t('checkin.locRetry') }}</button>
-              <details class="loc-help">
-                <summary>{{ $t('checkin.locHelpSummary') }}</summary>
-                <ol class="loc-steps">
-                  <li>{{ $t('checkin.locHelpStep1') }}</li>
-                  <li>{{ $t('checkin.locHelpStep2Intro') }}<b>{{ $t('checkin.locHelpStep2Bold') }}</b>{{ $t('checkin.locHelpStep2Outro') }}</li>
-                  <li>{{ $t('checkin.locHelpStep3') }}</li>
-                </ol>
-              </details>
-            </template>
+            <span class="loc-lead">{{ $t('checkin.locReasonLead') }}</span>
+            <textarea
+              v-model="missingReason" class="loc-reason-input" data-testid="loc-reason-input" rows="2" maxlength="200"
+              :placeholder="$t('checkin.locReasonPlaceholder')"
+            />
+            <button class="loc-retry" data-testid="loc-retry" :disabled="locating || submitting" @click="retryLocation">{{ $t('checkin.locRetry') }}</button>
+            <details class="loc-help">
+              <summary>{{ $t('checkin.locHelpSummary') }}</summary>
+              <ol class="loc-steps">
+                <li>{{ $t('checkin.locHelpStep1') }}</li>
+                <li>{{ $t('checkin.locHelpStep2') }}</li>
+                <li>{{ $t('checkin.locHelpStep3') }}</li>
+              </ol>
+            </details>
           </span>
         </div>
-
-        <!-- ③ 記録するだけの画面。ここに他のものを足さないこと（足すと元の木阿弥） -->
         <p v-else class="step-ready" data-testid="step-ready">
           {{ attendanceType === 'checkin' ? $t('checkin.stepReadyCheckin') : $t('checkin.stepReadyCheckout') }}
-          <!-- ★位置情報が取れなくても記録はできる（努力義務）。ここで「取得を押してから」と
-               出すと、押せないのに押せと言う矛盾した表示になる（2026-09-03 実機で発覚）。 -->
-          <span v-if="locationState !== 'granted'" class="step-ready-note">{{ $t('checkin.stepNoLocationNote') }}</span>
+          <span class="step-ready-note">{{ $t('checkin.stepLocationNote') }}</span>
         </p>
 
         <!-- ★後追い入力と修正申請は打刻の本筋ではない。最後のステップでだけ、
@@ -403,9 +382,13 @@
           class="btn-submit"
           :class="attendanceType"
           :disabled="!canSubmit"
+          data-testid="punch-submit"
           @click="submit"
         >
-          {{ submitting ? $t('checkin.submitting') : (attendanceType === 'checkin' ? $t('checkin.submitCheckin') : $t('checkin.submitCheckout')) }}
+          {{ locating ? $t('checkin.locPending')
+             : submitting ? $t('checkin.submitting')
+             : needReason ? (attendanceType === 'checkin' ? $t('checkin.submitCheckinWithReason') : $t('checkin.submitCheckoutWithReason'))
+             : (attendanceType === 'checkin' ? $t('checkin.submitCheckin') : $t('checkin.submitCheckout')) }}
         </button>
       </div>
     </div>
@@ -504,7 +487,21 @@ const geo = useGeolocation()
 const locationState = geo.state
 const locationLat   = geo.lat
 const locationLng   = geo.lng
-async function fetchLocation() { await geo.fetch() }
+/** 記録ボタンを押して位置を取りに行っている間 */
+const locating      = ref(false)
+/** 位置が取れなかった＝理由の欄を出している */
+const needReason    = ref(false)
+const missingReason = ref('')
+/** 位置を待つのは数秒まで（I-2 受け入れ条件「最大で数秒」）。取れなければ理由の入力へ進む */
+const PUNCH_GEO_TIMEOUT_MS = 6000
+async function locate(): Promise<boolean> {
+  locating.value = true
+  try { return !!(await geo.fetch({ timeout: PUNCH_GEO_TIMEOUT_MS })) } finally { locating.value = false }
+}
+/** 理由の欄から位置を取り直す。取れたらそのまま記録する（もう一度押させない） */
+async function retryLocation() {
+  if (await locate()) { needReason.value = false; await submit() }
+}
 
 // ── 代理モード ───────────────────────────────────────────────
 const selectedTarget  = computed(() => targets.value.find(t => t.id === selectedId.value) ?? null)
@@ -519,25 +516,19 @@ const allChecked = computed(() =>
   rules.value.length === 0 || checkedIds.value.size === rules.value.length
 )
 
-// 位置情報の「取得を試みたか」（努力義務）。
-// idle（未タップ）・pending（取得中）以外＝結果が出た状態なら送信可（拒否/失敗でも可）。
-const locationResolved = computed(() =>
-  locationState.value !== 'idle' && locationState.value !== 'pending'
-)
+// 位置が取れない時は理由を書けば記録できる（空のままでは押せない）
 const canSubmit = computed(() =>
-  allChecked.value && locationResolved.value && !submitting.value
+  allChecked.value && !submitting.value && !locating.value && (!needReason.value || !!missingReason.value.trim())
 )
 
 // ── 打刻をステップ式に出す（2026-09-03 運用者指摘「コンテンツ量が多すぎて画面を圧迫」）──
-//  ルール確認 → 現在地の取得 → 記録。★状態から導出する（手で進める番号を持たない）。
-//  番号を状態として持つと、途中で位置情報が失効した時などに画面と実態がずれる。
-type PunchStep = 'rules' | 'location' | 'submit'
+//  ルール確認 → 記録（現在地は記録ボタンで一緒に取る・2026-10-02 I-2）。★状態から導出する（手で進める番号を持たない）。
+type PunchStep = 'rules' | 'submit'
 /** 済んだステップを開き直している時だけ入る。次へで解除して導出値に戻る */
 const stepOverride = ref<PunchStep | null>(null)
 const punchStep = computed<PunchStep>(() => {
   if (stepOverride.value) return stepOverride.value
   if (rules.value.length && !allChecked.value) return 'rules'
-  if (!locationResolved.value) return 'location'
   return 'submit'
 })
 /** 確認事項ステップを出すか。区分の選択がある会社では、選んだ区分に確認事項が無くても
@@ -545,20 +536,16 @@ const punchStep = computed<PunchStep>(() => {
 const hasRulesStep = computed(() => rules.value.length > 0 || ruleCategories.value.length > 0)
 const selectedCategoryName = computed(() =>
   ruleCategories.value.find(c => c.id === selectedCategoryId.value)?.name ?? '')
-/** 出すステップの並び。確認事項も区分も無い会社では2段階になる */
+/** 出すステップの並び。確認事項も区分も無い会社では記録だけ（ステップの表示も出さない） */
 const stepList = computed<PunchStep[]>(() =>
-  hasRulesStep.value ? ['rules', 'location', 'submit'] : ['location', 'submit'])
+  hasRulesStep.value ? ['rules', 'submit'] : ['submit'])
 const stepIndex = computed(() => Math.max(0, stepList.value.indexOf(punchStep.value)))
 function stepLabel(st: PunchStep): string {
-  return st === 'rules' ? t('checkin.stepRules')
-    : st === 'location' ? t('checkin.stepLocation')
-    : t('checkin.stepSubmit')
+  return st === 'rules' ? t('checkin.stepRules') : t('checkin.stepSubmit')
 }
 /** 開き直したステップの条件が満たされているか（「次へ」を出してよいか） */
 const stepDoneForOverride = computed(() =>
-  stepOverride.value === 'rules' ? allChecked.value
-    : stepOverride.value === 'location' ? locationResolved.value
-    : true)
+  stepOverride.value === 'rules' ? allChecked.value : true)
 
 // 区分を切り替えたら、その区分のルールを引き直してチェックをやり直す（同意は区分ごと）
 async function pickCategory(id: string) {
@@ -876,16 +863,20 @@ async function enterChecklist() {
   // ルール未設定でもシンプル出退勤として継続（確認事項なし＝allChecked が true 扱い）。
   phase.value = 'checklist'
 
-  // 位置情報は自動取得しない。
-  // iOS LINE内ブラウザは「タップ等のユーザー操作なし」の自動要求を
-  // ダイアログ無しで即拒否(code=1)しドメイン単位で記憶してしまうため、
-  // 必ずユーザーのタップ（下のボタン）から要求する。
+  // 位置情報は画面を開いた時には求めない。記録ボタンを押した時に一緒に求める（押した操作の中で求めるので、
+  // 端末が黙って拒否することがない）。対象を変えた時は前の結果を持ち越さない。
   locationState.value = 'idle'
+  needReason.value = false
+  missingReason.value = ''
 }
 
 // ── 送信 ────────────────────────────────────────────────────
 async function submit() {
   if (!canSubmit.value) return
+  // ★位置はここで取る（ボタン1つ・I-2）。理由の欄を出している時は取り直さずに理由で記録する
+  if (!needReason.value && locationState.value !== 'granted') {
+    if (!(await locate())) { needReason.value = true; return }
+  }
   submitting.value = true
   // ★どの経路で抜けても必ず戻す。以前は失敗時に立てっぱなしで、
   //  エラー画面から戻っても送信ボタンが押せないままだった（独立レビュー指摘・2026-08-31）。
@@ -918,8 +909,9 @@ async function doSubmit() {
     targetWorkerId: workerIdToLog,
     workCategoryId: selectedCategoryId.value,
     agreedRuleTexts: rules.value.map(r => r.content),
-    lat: locationLat.value,
-    lng: locationLng.value,
+    lat: locationState.value === 'granted' ? locationLat.value : null,
+    lng: locationState.value === 'granted' ? locationLng.value : null,
+    locationMissingReason: locationState.value === 'granted' ? null : missingReason.value.trim() || null,
   })
 
   if (!res.ok) {
@@ -1380,10 +1372,6 @@ async function resolveReportLink(target: Target | null) {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 9px 11px; border-radius: 10px; font-size: 12px; font-weight: 600;
 }
-.location-status.idle      { background: #eff6ff; color: #1d4ed8; }
-.location-status.pending   { background: #f5f5f5; color: #888; }
-.location-status.granted   { background: #f0fdf4; color: #166534; }
-.location-status.retryable,
 .location-status.blocked   { background: #fffbeb; color: #92400e; }
 
 .loc-icon {
@@ -1394,7 +1382,6 @@ async function resolveReportLink(target: Target | null) {
 /* ボタンと注意書きが本文にひっついて「押せる物」に見えなかったので、
    前置き / ボタン / 注意書き を縦に積んで、ボタンだけ独立させる（2026-08-31） */
 .loc-lead { display: block; }
-.loc-note { display: block; margin-top: 5px; font-size: 10.5px; line-height: 1.4; font-weight: 400; opacity: .75; }
 
 .loc-help { margin-top: 8px; font-weight: 400; }
 .loc-help summary {
@@ -1414,18 +1401,12 @@ async function resolveReportLink(target: Target | null) {
   border-radius: 8px; padding: 8px 14px; min-height: 36px;
   font-size: 12px; font-weight: 700; cursor: pointer;
 }
-.loc-get {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  margin-top: 7px;
-  background: #2563eb; border: none; color: #fff;
-  border-radius: 8px; padding: 8px 16px; min-height: 38px;
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, .3);
-}
-.loc-get:active { background: #1d4ed8; }
-.loc-get-icon {
-  font-size: 16px;
-  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+.loc-retry:disabled { opacity: .5; cursor: default; }
+/* 位置が取れなかった時の理由（I-2）。16px 未満だと iPhone が入力時に画面を拡大してしまう */
+.loc-reason-input {
+  display: block; width: 100%; box-sizing: border-box; margin-top: 8px;
+  border: 1px solid #fcd34d; border-radius: 8px; padding: 8px 10px;
+  font-size: 16px; line-height: 1.4; color: #1f2937; background: #fff; resize: vertical;
 }
 
 .submit-hint {

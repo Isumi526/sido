@@ -107,6 +107,11 @@
                 rel="noopener"
                 class="location-link"
               >地図</a>
+              <!-- ★位置が取れずに理由を書いて押した打刻（2026-10-02 I-2）。承認はしない・見て分かるようにするだけ -->
+              <template v-else-if="log.location_missing_reason">
+                <span class="no-location-badge" data-testid="log-no-location">位置なし</span>
+                <div class="no-location-reason" data-testid="log-no-location-reason">{{ log.location_missing_reason }}</div>
+              </template>
               <span v-else class="no-location">—</span>
             </td>
           </tr>
@@ -153,6 +158,7 @@ type Log = {
   type: 'checkin' | 'checkout'
   location_lat: number | null
   location_lng: number | null
+  location_missing_reason: string | null
   agreed_rule_texts: string[] | null
   backdated: boolean | null
   // 打刻の修正（2026-09-03）。deleted_at=取り消した誤打刻・original_*=直す前の値
@@ -217,6 +223,7 @@ async function load() {
       type,
       location_lat,
       location_lng,
+      location_missing_reason,
       agreed_rule_texts,
       backdated,
       deleted_at,
@@ -393,6 +400,11 @@ tr.voided .date { text-decoration: line-through; }
 .proxy { color: #888; font-size: 12px; }
 .no-location { color: #ccc; }
 .location-link { color: #06C755; font-size: 12px; }
+.no-location-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.no-location-reason { margin-top: 2px; font-size: 11px; color: #555; max-width: 180px; word-break: break-word; }
 
 .limit-note {
   padding: 10px 16px;
