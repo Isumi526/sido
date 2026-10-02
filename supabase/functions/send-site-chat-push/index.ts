@@ -17,6 +17,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import webpush from 'https://esm.sh/web-push@3.6.7'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { pushToWorkers } from '../_shared/worker-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -116,16 +117,44 @@ Deno.serve(async (req) => {
       return json({ ok: true, subscribed: true })
     }
 
-    // ── 配信先 ──
+    const { data: site } = await svc.from('sites').select('name, responsible_worker_id').eq('id', siteId).maybeSingle()
+
+    // ── 現場チャットのメンバー（共有登録＋現場責任者）の端末へ、作業員の通知の仕組みで届ける（2026-10-02）──
+    //  ★以前は現場ごとの購読（push_subscriptions）だけに送っていたが、購読を作るのは招待リンクのゲストだけで、
+    //   作業員さんは誰も購読していなかった（本番 0 件）＝新着がスマホに届かなかった。
+    //   作業員さんは「アプリからの通知を受け取る」（worker_push_subscriptions）で既に端末を登録しているので、そちらに送る。
+    //   種類は chat（設定ページでオフにできる）。送った本人・@で呼ばれた人（別に「呼ばれています」が届く）には送らない。
+    let workerResult: unknown = null
+    if (caller || accountId) {
+      const { data: shares } = await svc.from('site_shares').select('user_id').eq('site_id', siteId)
+      const userIds = ((shares ?? []) as any[]).map((s) => s.user_id).filter(Boolean)
+      const { data: us } = userIds.length
+        ? await svc.from('users').select('worker_id').eq('account_id', accountId).in('id', userIds)
+        : { data: [] }
+      const exclude = new Set<string>([
+        ...(caller?.workerId ? [caller.workerId] : []),
+        ...(Array.isArray(body.exclude_worker_ids) ? (body.exclude_worker_ids as unknown[]).map(String) : []),
+      ])
+      const members = [...new Set([...((us ?? []) as any[]).map((u) => u.worker_id), site?.responsible_worker_id])]
+        .filter((id): id is string => !!id && !exclude.has(id))
+      workerResult = await pushToWorkers(svc, accountId, members, {
+        kind: 'chat',
+        title: `${site?.name ?? '現場'} の新着`,
+        body: `${senderName ? senderName + '：' : ''}${preview.slice(0, 80)}`,
+        url: PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/site-chat/${siteId}` : `/site-chat/${siteId}`,
+        tag: `site-chat-${siteId}`,
+      })
+    }
+
+    // ── 現場ごとの購読（招待リンクのゲスト）──
     const { data: subs } = await svc.from('push_subscriptions')
       .select('id, endpoint, p256dh, auth, sender_name')
       .eq('account_id', accountId).eq('site_id', siteId)
     const targets = (subs ?? []).filter((s: any) =>
       // 自分が送ったメッセージで自分に通知しない
       !senderName || s.sender_name !== senderName)
-    if (!targets.length) return json({ ok: true, sent: 0 })
+    if (!targets.length) return json({ ok: true, sent: 0, workers: workerResult })
 
-    const { data: site } = await svc.from('sites').select('name').eq('id', siteId).maybeSingle()
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
 
     const payload = JSON.stringify({
@@ -156,7 +185,7 @@ Deno.serve(async (req) => {
     }))
     if (dead.length) await svc.from('push_subscriptions').delete().in('id', dead)
 
-    return json({ ok: true, sent, pruned: dead.length })
+    return json({ ok: true, sent, pruned: dead.length, workers: workerResult })
   } catch (e) {
     console.error('[send-site-chat-push]', e)
     return json({ error: String(e) }, 500)

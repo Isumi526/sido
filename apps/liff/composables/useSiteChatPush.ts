@@ -136,6 +136,8 @@ export const useSiteChatPush = () => {
     senderName: string
     body: string
     inviteToken?: string | null
+    /** @で呼んだ人（別に「呼ばれています」が届くので、新着の通知は重ねない） */
+    mentionedWorkerIds?: string[]
   }): void {
     if (!opts.siteId) return
     void (async () => {
@@ -146,6 +148,7 @@ export const useSiteChatPush = () => {
           sender_name: opts.senderName,
           body: opts.body,
           invite_token: opts.inviteToken ?? '',
+          exclude_worker_ids: opts.mentionedWorkerIds ?? [],
         })
       } catch (e) {
         console.warn('[push] 新着通知の送信をスキップ:', e)
