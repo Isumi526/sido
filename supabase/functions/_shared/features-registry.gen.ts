@@ -22,7 +22,7 @@
 //  ※ import を持たない自己完結ファイル。
 // ============================================================
 
-export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms' | 'inventory' | 'estimate_excel'
+export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms' | 'inventory' | 'estimate_excel' | 'report_steps'
 
 export type FeatureDef = {
   key: FeatureKey
@@ -61,6 +61,12 @@ export const FEATURES: FeatureDef[] = [
     // OFF のあいだは admin「在庫管理」メニュー／ルートと、作業員アプリの「在庫」メニュー／画面を隠す（データは消さない）。
     key: 'inventory', settingKey: 'feature.inventory', label: '資材の在庫（ベータ）', defaultOn: false,
     description: '品目マスタと、作業員アプリの「在庫」（引き上げ・持出・入荷を写真つきで記録）。残数把握用で会計在庫ではありません。',
+  },
+  {
+    // 日報の「1つずつ入力」（R-3・2026-10-03）: 人のレビュー（🖐）が済むまで既定OFF（亥角さん決定・2026-10-03）。
+    // OFF のあいだは作業員アプリの日報画面に切り替えのタブを出さず、いつもの画面で開く（選んでいた既定も無視）。
+    key: 'report_steps', settingKey: 'feature.report_steps', label: '日報の1つずつ入力（ベータ）', defaultOn: false,
+    description: '作業員アプリの日報画面で「いつもの画面」と「1つずつ入力」（領収書をまとめて読み取り）を切り替えられるようにする。',
   },
 ]
 

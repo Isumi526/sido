@@ -55,7 +55,7 @@
       <form v-else ref="formRef" @submit.prevent="handleSubmit" class="form">
 
         <!-- 従来／ステップ式の切り替え（R-3・2026-10-02）。最後に選んだ方が次回の既定 -->
-        <div class="form-mode-tabs" role="tablist" data-testid="form-mode-tabs">
+        <div v-if="stepsAllowed" class="form-mode-tabs" role="tablist" data-testid="form-mode-tabs">
           <button type="button" role="tab" class="form-mode-tab" :class="{ on: !isSteps }" :aria-selected="!isSteps" data-testid="form-mode-classic" @click="setFormMode('classic')">{{ $t('report.formModeClassic') }}</button>
           <button type="button" role="tab" class="form-mode-tab" :class="{ on: isSteps }" :aria-selected="isSteps" data-testid="form-mode-steps" @click="setFormMode('steps')">{{ $t('report.formModeSteps') }}</button>
         </div>
@@ -2044,7 +2044,10 @@ function readFormMode(): FormMode {
   try { return localStorage.getItem(FORM_MODE_KEY) === 'steps' ? 'steps' : 'classic' } catch { return 'classic' }
 }
 const formMode = ref<FormMode>(readFormMode())
-const isSteps = computed(() => formMode.value === 'steps')
+// ★「使う機能」の 日報の1つずつ入力（feature.report_steps・既定OFF）が ON の会社だけ切り替えられる。
+//  人のレビューが済むまで隠す（2026-10-03 亥角さん決定）。OFF の時は選んでいた既定に関係なくいつもの画面
+const stepsAllowed = computed(() => isLiffFeatureEnabled('report_steps'))
+const isSteps = computed(() => stepsAllowed.value && formMode.value === 'steps')
 const formRef = ref<HTMLFormElement | null>(null)
 const stepIndex = ref(0)
 function setFormMode(m: FormMode, opts: { persist?: boolean } = {}) {
