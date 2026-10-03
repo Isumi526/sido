@@ -10,7 +10,7 @@
 //  ★AI の読み取りは画面から EF を呼ぶので、ここでは返事を決まった値に差し替える（読み取りの精度は別のテストの範囲）。
 // ============================================================
 import { test, expect } from './liff-test'
-import { restSrv, getAccountId, devUserWorkerId } from './helpers'
+import { restSrv, getAccountId, devUserWorkerId, setFeatureFlag } from './helpers'
 
 const jstDay = (offset: number) => new Date(Date.now() - offset * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
 const DAY = jstDay(2)
@@ -18,12 +18,14 @@ const OTHER_DAY = jstDay(9)
 let userId = ''
 
 test.beforeAll(async () => {
+  await setFeatureFlag('feature.report_steps', true)   // 使う機能で ON の会社だけ（既定OFF・2026-10-03）
   const accountId = await getAccountId()
   const workerId = await devUserWorkerId()
   userId = (await restSrv(`users?worker_id=eq.${workerId}&account_id=eq.${accountId}&select=id&order=created_at&limit=1`))[0].id
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DAY}`, { method: 'DELETE' }).catch(() => {})
 })
 test.afterAll(async () => {
+  await setFeatureFlag('feature.report_steps', null)
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DAY}`, { method: 'DELETE' }).catch(() => {})
 })
 

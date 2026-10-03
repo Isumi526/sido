@@ -9,7 +9,7 @@
 //   4. ステップ式で送った日報は、いつもの画面で開いても同じ内容（同じ入力欄・同じ保存処理を使う）
 // ============================================================
 import { test, expect } from './liff-test'
-import { restSrv, getAccountId, devUserWorkerId } from './helpers'
+import { restSrv, getAccountId, devUserWorkerId, setFeatureFlag } from './helpers'
 
 const jstDay = (offset: number) => new Date(Date.now() - offset * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
 const DAY = jstDay(1)
@@ -20,12 +20,14 @@ let userId = ''
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
+  await setFeatureFlag('feature.report_steps', true)   // 使う機能で ON の会社だけ（既定OFF・2026-10-03）
   const accountId = await getAccountId()
   const workerId = await devUserWorkerId()
   userId = (await restSrv(`users?worker_id=eq.${workerId}&account_id=eq.${accountId}&select=id&order=created_at&limit=1`))[0].id
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DAY}`, { method: 'DELETE' }).catch(() => {})
 })
 test.afterAll(async () => {
+  await setFeatureFlag('feature.report_steps', null)
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DAY}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`users?id=eq.${userId}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ report_form_pref: null }) }).catch(() => {})
 })
@@ -91,4 +93,17 @@ test('★1つずつ入力で送った日報が、いつもの画面で同じ内�
   await expect(page.getByTestId('report-note')).toHaveValue(NOTE)
   await expect(page.getByTestId('site-select-0')).toHaveValue(siteValue!)
   await expect(page.getByTestId('step-head'), 'いつもの画面にはステップの見出しは出ない').toHaveCount(0)
+})
+
+test('★使う機能で OFF の会社には、切り替えのタブを出さない（選んでいた既定もいつもの画面に戻る）', async ({ page }) => {
+  await setFeatureFlag('feature.report_steps', false)
+  try {
+    await page.addInitScript(() => { try { localStorage.setItem('report_form_mode', 'steps') } catch { /* noop */ } })
+    await page.goto(`/report?edit=${DAY}`, { waitUntil: 'networkidle' })   // 1本目で送った日を編集で開く
+    await expect(page.getByTestId('report-note')).toBeVisible({ timeout: 20000 })
+    await expect(page.getByTestId('form-mode-tabs')).toHaveCount(0)
+    await expect(page.getByTestId('step-head')).toHaveCount(0)
+  } finally {
+    await setFeatureFlag('feature.report_steps', true)
+  }
 })
